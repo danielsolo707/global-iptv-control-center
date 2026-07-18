@@ -18,6 +18,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MINIMUM_CHANNELS_PER_COUNTRY: "10"
       - uses: actions/upload-artifact@v4
         with:
           name: country-availability-report

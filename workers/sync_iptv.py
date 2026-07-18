@@ -30,7 +30,7 @@ def parse_m3u(document: str, metadata: dict[str, dict]) -> list[dict]:
                     "channel_id": channel_id,
                     "name": source.get("name") or pending["name"],
                     "country_code": country_code,
-                    "category": (source.get("categories") or [None])[0] if isinstance(source.get("categories"), list) else source.get("categories"),
+                    "category": (source.get("categories") or ["general"])[0] if isinstance(source.get("categories"), list) else source.get("categories") or "general",
                     "language": (source.get("languages") or [None])[0] if isinstance(source.get("languages"), list) else source.get("languages"),
                     "logo": pending["attrs"].get("tvg-logo") or source.get("logo"),
                     "stream_url": line,

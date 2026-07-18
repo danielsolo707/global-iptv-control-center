@@ -31,9 +31,15 @@ export async function getOnlineChannels(filters: ChannelFilters = {}): Promise<C
   }
   const db = await createSupabaseServerClient()
   if (!db) return []
+  const { data: visibleCountries, error: countryError } = await db.from("country_availability_report")
+    .select("code").eq("enabled", true).gte("total_channels", 10)
+  if (countryError) throw new Error(`Country visibility query failed: ${countryError.message}`)
+  const visibleCodes = (visibleCountries || []).map((country) => country.code)
+  if (filters.country && !visibleCodes.includes(filters.country.toUpperCase())) return []
+  if (!visibleCodes.length) return []
   let query = db.from("channels")
     .select("id,channel_id,name,country,country_code,category,language,logo,stream_url,response_time")
-    .eq("status", "online").order("name").limit(500)
+    .eq("status", "online").in("country_code", visibleCodes).order("name").limit(500)
   if (filters.country) query = query.eq("country_code", filters.country.toUpperCase())
   if (filters.category) query = query.eq("category", filters.category)
   if (filters.language) query = query.eq("language", filters.language)
@@ -53,7 +59,7 @@ export async function getCountries() {
   }
   const db = await createSupabaseServerClient()
   if (!db) return []
-  const { data, error } = await db.from("country_availability_report").select("name,code,online_channels").eq("enabled", true).order("name")
+  const { data, error } = await db.from("country_availability_report").select("name,code,online_channels").eq("enabled", true).gte("total_channels", 10).order("name")
   if (error) throw new Error(`Country query failed: ${error.message}`)
   return (data || []).map((country) => ({ name: country.name, code: country.code, channelCount: country.online_channels }))
 }
@@ -65,13 +71,13 @@ export async function getCatalogStatistics() {
   }
   const db = await createSupabaseServerClient()
   if (!db) return { totalChannels: 0, onlineChannels: 0, offlineChannels: 0, countriesCount: 0 }
-  const { data, error } = await db.rpc("catalog_statistics")
+  const { data, error } = await db.from("country_availability_report")
+    .select("total_channels,online_channels,offline_channels").eq("enabled", true).gte("total_channels", 10)
   if (error) throw new Error(`Statistics query failed: ${error.message}`)
-  const stats = data?.[0]
   return {
-    totalChannels: Number(stats?.total_channels || 0),
-    onlineChannels: Number(stats?.online_channels || 0),
-    offlineChannels: Number(stats?.offline_channels || 0),
-    countriesCount: Number(stats?.countries_count || 0),
+    totalChannels: (data || []).reduce((sum, country) => sum + Number(country.total_channels || 0), 0),
+    onlineChannels: (data || []).reduce((sum, country) => sum + Number(country.online_channels || 0), 0),
+    offlineChannels: (data || []).reduce((sum, country) => sum + Number(country.offline_channels || 0), 0),
+    countriesCount: data?.length || 0,
   }
 }

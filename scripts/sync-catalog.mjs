@@ -29,7 +29,7 @@ function parseM3u(document, metadata) {
           channel_id: channelId,
           name: source.name || pending.name,
           country_code: countryCode,
-          category: (Array.isArray(source.categories) ? source.categories[0] : source.categories) || null,
+          category: (Array.isArray(source.categories) ? source.categories[0] : source.categories) || "general",
           language: (Array.isArray(source.languages) ? source.languages[0] : source.languages) || null,
           logo: pending.attrs["tvg-logo"] || source.logo || null,
           stream_url: line,

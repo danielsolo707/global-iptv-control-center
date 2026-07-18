@@ -11,6 +11,7 @@ const IPTV_BASE = "https://iptv-org.github.io/api"
 const CACHE_TTL_MS = 2 * 60 * 1000 // Keep provider additions and removals in sync quickly.
 const SEARCH_RESULT_LIMIT = 100
 const UNAVAILABLE_CHANNEL_TTL_MS = 10 * 60 * 1000
+const MINIMUM_CHANNELS_PER_COUNTRY = 10
 
 // In-memory cache
 type IptvData = {
@@ -395,14 +396,24 @@ async function loadSupabaseCatalog(): Promise<IptvData | null> {
   if (!url || !key || url.includes("your-project") || key.includes("your-anon-key")) return null
 
   const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
-  const [{ data: rows, error: channelError }, { data: countryRows, error: countryError }] = await Promise.all([
-    db.from("channels").select("channel_id,name,country,country_code,category,language,logo,stream_url,response_time").eq("status", "online").order("name").limit(5000),
+  const [{ data: countryRows, error: countryError }, { data: countryReport, error: reportError }] = await Promise.all([
     db.from("countries").select("name,code").eq("enabled", true).order("name"),
+    db.from("country_availability_report").select("code,total_channels").eq("enabled", true).gte("total_channels", MINIMUM_CHANNELS_PER_COUNTRY),
   ])
-  if (channelError || countryError) throw new Error(channelError?.message || countryError?.message || "Supabase catalog query failed")
+  if (countryError || reportError) throw new Error(countryError?.message || reportError?.message || "Supabase catalog query failed")
+  const visibleCountryCodes = new Set((countryReport || []).map((country) => country.code))
+  const rows: Array<{ channel_id: string; name: string; country: string; country_code: string; category: string | null; language: string | null; logo: string | null; stream_url: string; response_time: number | null }> = []
+  for (let start = 0; ; start += 1000) {
+    const { data, error } = await db.from("channels")
+      .select("channel_id,name,country,country_code,category,language,logo,stream_url,response_time")
+      .eq("status", "online").in("country_code", [...visibleCountryCodes]).order("name").range(start, start + 999)
+    if (error) throw new Error(`Supabase catalog query failed: ${error.message}`)
+    rows.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
 
   const countriesByCode = new Map((countryRows || []).map((country) => [country.code, country.name]))
-  const channels: IptvChannel[] = (rows || []).map((channel, index) => {
+  const channels: IptvChannel[] = rows.map((channel, index) => {
     const category = CATEGORY_MAP[(channel.category || "").toLowerCase()] || DEFAULT_CATEGORY
     const code = channel.country_code.toUpperCase()
     return {
@@ -420,7 +431,7 @@ async function loadSupabaseCatalog(): Promise<IptvData | null> {
       streams: [{ url: channel.stream_url }],
     }
   })
-  const countries = (countryRows || []).map((country) => {
+  const countries = (countryRows || []).filter((country) => visibleCountryCodes.has(country.code)).map((country) => {
     const code = country.code.toUpperCase()
     const countryChannels = channels.filter((channel) => channel.countrySlug === code.toLowerCase())
     return { slug: code.toLowerCase(), name: country.name, flag: getFlagEmoji(code), code, region: getRegion(code), image: countryImageFor(code), channels: countryChannels.length, popularity: countryChannels.length, hd: 0, uhd: 0, languages: Array.from(new Set(countryChannels.map((channel) => channel.language))) }
