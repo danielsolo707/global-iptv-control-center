@@ -79,7 +79,7 @@ Open [http://localhost:3000](http://localhost:3000) for the viewer application a
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run [`supabase/migrations/001_admin_dashboard.sql`](supabase/migrations/001_admin_dashboard.sql) in the Supabase SQL editor or apply it with the Supabase CLI.
+2. Run the migrations in order: [`001_admin_dashboard.sql`](supabase/migrations/001_admin_dashboard.sql), then [`002_iptv_catalog.sql`](supabase/migrations/002_iptv_catalog.sql). The second migration creates the persistent channel catalog, enables the initial six countries, and adds public online-only catalog access.
 3. Create the first administrator in Supabase Authentication.
 4. Copy that user's UUID and bootstrap the role in the SQL editor:
 
@@ -94,10 +94,26 @@ values ('AUTH_USER_UUID', 'admin@example.com', 'admin');
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_URL=https://your-project.supabase.co
 FFPROBE_PATH=ffprobe
 ```
 
-The service-role key is used only by the server-side admin invitation endpoint. Keep it server-only and never prefix it with `NEXT_PUBLIC_`.
+The service-role key is used only by trusted server-side code and the GitHub Actions workers. Keep it server-only and never prefix it with `NEXT_PUBLIC_`.
+
+### Automated catalog
+
+The IPTV catalog is synchronized from the upstream `index.m3u` every day. Channel metadata is matched with the upstream public channel list to obtain country, category, and language data. The workers keep channels missing from the upstream source as `removed`, rather than deleting them.
+
+GitHub Actions runs the stream checker every six hours. It records HTTP/Content-Type and FFprobe results in `stream_checks`; one failure results in `checking`, three consecutive failures in `offline`, and ten in `blocked`. A healthy check resets the counter and restores `online`.
+
+Add these repository secrets before enabling the workflows:
+
+```text
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+The service role key is used only by GitHub Actions and server-side code—never put it in a browser variable. The generated API endpoints are `GET /api/channels` (optional `country`, `category`, and `language` filters), `GET /api/countries`, and `GET /api/statistics`. Once Supabase is configured, they source only validated online channels from the database.
 
 ## Security design
 

@@ -1,4 +1,5 @@
 import type { IptvChannel, IptvCountry, IptvCategory, IptvStats, IptvStream } from "./types"
+import { createClient } from "@supabase/supabase-js"
 
 /*
  * Global IPTV Data Service
@@ -190,6 +191,9 @@ export async function fetchIptvData(): Promise<IptvData> {
 
 async function loadIptvData(): Promise<IptvData> {
   try {
+    const databaseData = await loadSupabaseCatalog()
+    if (databaseData) return databaseData
+
     // Fetch all IPTV data in parallel
     const [channelsRes, streamsRes, countriesRes] = await Promise.all([
       fetch(`${IPTV_BASE}/channels.json`, { cache: "no-store", signal: AbortSignal.timeout(30_000) }),
@@ -381,6 +385,53 @@ async function loadIptvData(): Promise<IptvData> {
     }
     throw error
   }
+}
+
+// Once configured, the viewer catalog comes from Supabase. RLS only permits
+// anonymous reads of enabled countries and validated online channels.
+async function loadSupabaseCatalog(): Promise<IptvData | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key || url.includes("your-project") || key.includes("your-anon-key")) return null
+
+  const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
+  const [{ data: rows, error: channelError }, { data: countryRows, error: countryError }] = await Promise.all([
+    db.from("channels").select("channel_id,name,country,country_code,category,language,logo,stream_url,response_time").eq("status", "online").order("name").limit(5000),
+    db.from("countries").select("name,code").eq("enabled", true).order("name"),
+  ])
+  if (channelError || countryError) throw new Error(channelError?.message || countryError?.message || "Supabase catalog query failed")
+
+  const countriesByCode = new Map((countryRows || []).map((country) => [country.code, country.name]))
+  const channels: IptvChannel[] = (rows || []).map((channel, index) => {
+    const category = CATEGORY_MAP[(channel.category || "").toLowerCase()] || DEFAULT_CATEGORY
+    const code = channel.country_code.toUpperCase()
+    return {
+      slug: channel.channel_id.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `channel-${index}`,
+      name: channel.name,
+      logoColor: logoColors[index % logoColors.length],
+      countrySlug: code.toLowerCase(),
+      countryName: channel.country || countriesByCode.get(code) || code,
+      categorySlug: category.slug,
+      language: channel.language || "Unknown",
+      quality: "Unknown",
+      image: category.image,
+      description: `${channel.name} broadcasts live ${category.name.toLowerCase()} programming from ${channel.country || countriesByCode.get(code) || code}.`,
+      streamUrl: channel.stream_url,
+      streams: [{ url: channel.stream_url }],
+    }
+  })
+  const countries = (countryRows || []).map((country) => {
+    const code = country.code.toUpperCase()
+    const countryChannels = channels.filter((channel) => channel.countrySlug === code.toLowerCase())
+    return { slug: code.toLowerCase(), name: country.name, flag: getFlagEmoji(code), code, region: getRegion(code), image: countryImageFor(code), channels: countryChannels.length, popularity: countryChannels.length, hd: 0, uhd: 0, languages: Array.from(new Set(countryChannels.map((channel) => channel.language))) }
+  })
+  const categoryCounts = new Map<string, number>()
+  for (const channel of channels) categoryCounts.set(channel.categorySlug, (categoryCounts.get(channel.categorySlug) || 0) + 1)
+  const categories = Array.from(categoryCounts, ([slug, count]) => {
+    const category = Object.values(CATEGORY_MAP).find((item) => item.slug === slug) || DEFAULT_CATEGORY
+    return { slug, name: category.name, icon: category.icon, channels: count, color: category.color, gradient: category.gradient, image: category.image }
+  }).sort((a, b) => b.channels - a.channels)
+  return { channels, countries, categories, stats: { channels: channels.length, countries: countries.length, hd: 0, uhd: 0 } }
 }
 
 // Force refresh
