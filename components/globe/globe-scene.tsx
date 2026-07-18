@@ -4,7 +4,7 @@ import { useRef, useMemo, useState } from "react"
 import { Canvas, useFrame, useLoader } from "@react-three/fiber"
 import { OrbitControls, Stars, Html } from "@react-three/drei"
 import * as THREE from "three"
-import { countries as allCountries, type Country } from "@/lib/data"
+import type { IptvCountry } from "@/lib/types"
 
 const RADIUS = 2
 
@@ -50,13 +50,15 @@ function Atmosphere() {
 
 function Earth({
   autoRotate,
+  countries,
   onSelect,
   onHover,
   selectedSlug,
 }: {
   autoRotate: boolean
-  onSelect?: (c: Country) => void
-  onHover?: (c: Country | null) => void
+  countries: IptvCountry[]
+  onSelect?: (c: IptvCountry) => void
+  onHover?: (c: IptvCountry | null) => void
   selectedSlug?: string
 }) {
   const group = useRef<THREE.Group>(null)
@@ -70,8 +72,8 @@ function Earth({
   })
 
   const markers = useMemo(
-    () => allCountries.map((c) => ({ c, pos: latLngToVec3(c.lat, c.lng, RADIUS + 0.02) })),
-    [],
+    () => countries.map((c) => ({ c, pos: latLngToVec3(c.lat, c.lng, RADIUS + 0.02) })),
+    [countries],
   )
 
   return (
@@ -138,14 +140,16 @@ function Earth({
 export default function GlobeScene({
   interactive = true,
   autoRotate = true,
+  countries,
   onSelect,
   onHover,
   selectedSlug,
 }: {
   interactive?: boolean
   autoRotate?: boolean
-  onSelect?: (c: Country) => void
-  onHover?: (c: Country | null) => void
+  countries: IptvCountry[]
+  onSelect?: (c: IptvCountry) => void
+  onHover?: (c: IptvCountry | null) => void
   selectedSlug?: string
 }) {
   return (
@@ -153,7 +157,7 @@ export default function GlobeScene({
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 3, 5]} intensity={1.2} />
       <Stars radius={80} depth={40} count={2500} factor={4} saturation={0} fade speed={1} />
-      <Earth autoRotate={autoRotate} onSelect={onSelect} onHover={onHover} selectedSlug={selectedSlug} />
+      <Earth autoRotate={autoRotate} countries={countries} onSelect={onSelect} onHover={onHover} selectedSlug={selectedSlug} />
       <Atmosphere />
       {interactive && (
         <OrbitControls

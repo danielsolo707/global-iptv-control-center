@@ -5,11 +5,11 @@ import Link from "next/link"
 import { Globe } from "@/components/globe/globe"
 import { PillButton, LiveDot } from "@/components/ui/primitives"
 import { StatCard } from "@/components/cards"
-import { Globe as GlobeIcon, Play, Tv, Wifi, ArrowRight } from "lucide-react"
-import { stats, type Country } from "@/lib/data"
+import { Globe as GlobeIcon, Play, Tv, Wifi } from "lucide-react"
+import type { IptvCountry, IptvStats } from "@/lib/types"
 
-export function Hero() {
-  const [hovered, setHovered] = useState<Country | null>(null)
+export function Hero({ stats, countries }: { stats: IptvStats; countries: IptvCountry[] }) {
+  const [hovered, setHovered] = useState<IptvCountry | null>(null)
 
   return (
     <section className="relative overflow-hidden rounded-3xl border border-border/60 bg-card/30">
@@ -59,7 +59,7 @@ export function Hero() {
         {/* Right — globe */}
         <div className="relative aspect-square w-full">
           <div className="absolute inset-0">
-            <Globe interactive autoRotate onHover={setHovered} />
+            <Globe interactive autoRotate countries={countries} onHover={setHovered} />
           </div>
 
           {/* Floating info card */}
@@ -78,11 +78,11 @@ export function Hero() {
                     </div>
                   </div>
                   <span className="grid size-8 place-items-center rounded-full bg-gradient-brand">
-                    <ArrowRight className="size-4 text-white" />
+                    <GlobeIcon className="size-4 text-white" />
                   </span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {["News", "Sports", "Movies"].map((t) => (
+                  {hovered.languages.slice(0, 3).map((t) => (
                     <span key={t} className="rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/80">
                       {t}
                     </span>

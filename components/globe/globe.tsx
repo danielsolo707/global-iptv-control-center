@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic"
 import { Globe as GlobeIcon } from "lucide-react"
-import type { Country } from "@/lib/data"
+import type { IptvCountry } from "@/lib/types"
 
 const GlobeScene = dynamic(() => import("@/components/globe/globe-scene"), {
   ssr: false,
@@ -19,8 +19,9 @@ const GlobeScene = dynamic(() => import("@/components/globe/globe-scene"), {
 export function Globe(props: {
   interactive?: boolean
   autoRotate?: boolean
-  onSelect?: (c: Country) => void
-  onHover?: (c: Country | null) => void
+  countries: IptvCountry[]
+  onSelect?: (c: IptvCountry) => void
+  onHover?: (c: IptvCountry | null) => void
   selectedSlug?: string
 }) {
   return (

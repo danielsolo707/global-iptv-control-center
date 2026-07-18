@@ -17,8 +17,7 @@ import {
   Play,
   Eye,
 } from "lucide-react"
-import type { Channel, Country, Category } from "@/lib/data"
-import { getCountry } from "@/lib/data"
+import type { IptvChannel, IptvCountry, IptvCategory } from "@/lib/types"
 import { useApp } from "@/components/app-provider"
 import { QualityBadge, LiveDot, Badge } from "@/components/ui/primitives"
 import { cn } from "@/lib/utils"
@@ -66,8 +65,7 @@ export function FavoriteButton({ slug, className }: { slug: string; className?: 
   )
 }
 
-export function ChannelCard({ channel }: { channel: Channel }) {
-  const country = getCountry(channel.countrySlug)
+export function ChannelCard({ channel, country }: { channel: IptvChannel; country?: IptvCountry }) {
   return (
     <Link
       href={`/channel/${channel.slug}`}
@@ -101,7 +99,7 @@ export function ChannelCard({ channel }: { channel: Channel }) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{channel.name}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {country?.flag} {country?.name}
+            {country?.flag} {country?.name || channel.countrySlug}
           </p>
         </div>
       </div>
@@ -115,7 +113,7 @@ export function ChannelCard({ channel }: { channel: Channel }) {
   )
 }
 
-export function CountryCard({ country, className }: { country: Country; className?: string }) {
+export function CountryCard({ country, className }: { country: IptvCountry; className?: string }) {
   return (
     <Link
       href={`/countries/${country.slug}`}
@@ -148,7 +146,7 @@ export function CountryCard({ country, className }: { country: Country; classNam
   )
 }
 
-export function CategoryCard({ category, wide }: { category: Category; wide?: boolean }) {
+export function CategoryCard({ category, wide }: { category: IptvCategory; wide?: boolean }) {
   return (
     <Link
       href={`/categories/${category.slug}`}

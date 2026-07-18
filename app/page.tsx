@@ -2,22 +2,24 @@ import { Hero } from "@/components/home/hero"
 import { Rail, SectionHeader } from "@/components/ui/primitives"
 import { ChannelCard, CountryCard, CategoryCard } from "@/components/cards"
 import { Flame, Globe, LayoutGrid, Radio, Sparkles, Clock } from "lucide-react"
-import {
-  channels,
-  categories,
-  trendingChannels,
-  trendingCountries,
-} from "@/lib/data"
+import { getAllData, getTrendingChannels, getTrendingCountries } from "@/lib/api-client"
 
-export default function HomePage() {
-  const trending = trendingCountries()
-  const liveTrending = trendingChannels()
+export default async function HomePage() {
+  const [{ channels, countries, categories, stats }, trendingChannels, trendingCountries] = await Promise.all([
+    getAllData(),
+    getTrendingChannels(),
+    getTrendingCountries(),
+  ])
+
   const featured = channels.slice(0, 8)
   const recentlyAdded = [...channels].reverse().slice(0, 8)
+  const popular = [...channels].sort((a, b) => b.viewers - a.viewers).slice(0, 8)
+
+  const countryMap = new Map(countries.map((c) => [c.slug, c]))
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-12">
-      <Hero />
+      <Hero stats={stats} countries={countries} />
 
       <section>
         <SectionHeader
@@ -26,8 +28,8 @@ export default function HomePage() {
           href="/trending"
         />
         <Rail>
-          {liveTrending.map((c) => (
-            <ChannelCard key={c.slug} channel={c} />
+          {trendingChannels.map((c) => (
+            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} />
           ))}
         </Rail>
       </section>
@@ -39,7 +41,7 @@ export default function HomePage() {
           href="/countries"
         />
         <Rail>
-          {trending.map((c) => (
+          {trendingCountries.map((c) => (
             <div key={c.slug} className="w-44 shrink-0 snap-start md:w-52">
               <CountryCard country={c} />
             </div>
@@ -68,7 +70,7 @@ export default function HomePage() {
         />
         <Rail>
           {featured.map((c) => (
-            <ChannelCard key={c.slug} channel={c} />
+            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} />
           ))}
         </Rail>
       </section>
@@ -80,8 +82,8 @@ export default function HomePage() {
           href="/trending"
         />
         <Rail>
-          {[...channels].sort((a, b) => b.viewers - a.viewers).slice(0, 8).map((c) => (
-            <ChannelCard key={c.slug} channel={c} />
+          {popular.map((c) => (
+            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} />
           ))}
         </Rail>
       </section>
@@ -94,7 +96,7 @@ export default function HomePage() {
         />
         <Rail>
           {recentlyAdded.map((c) => (
-            <ChannelCard key={c.slug} channel={c} />
+            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} />
           ))}
         </Rail>
       </section>
