@@ -79,6 +79,21 @@
   color-scheme: dark;
 }
 
+.admin-light {
+  color-scheme: light;
+  --background: oklch(0.97 0.006 260);
+  --foreground: oklch(0.18 0.02 262);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 262);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 262);
+  --secondary: oklch(0.93 0.01 260);
+  --secondary-foreground: oklch(0.2 0.02 262);
+  --muted: oklch(0.92 0.01 260);
+  --muted-foreground: oklch(0.5 0.02 262);
+  --border: oklch(0.75 0.02 260 / 45%);
+}
+
 .high-contrast {
   --background: oklch(0.08 0 0);
   --foreground: oklch(1 0 0);

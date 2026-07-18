@@ -97,6 +97,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push(`/search${trimmedQuery ? `?q=${encodeURIComponent(trimmedQuery)}` : ""}`)
   }
 
+  if (pathname.startsWith("/admin")) return <>{children}</>
+
   return (
     <div className="flex min-h-screen overflow-x-clip">
       {/* Desktop sidebar */}

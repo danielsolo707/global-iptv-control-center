@@ -18,6 +18,10 @@ yarn-error.log*
 
 # env files
 .env*
+!.env.example
+
+# local package manager cache
+.pnpm-store/
 
 # vercel
 .vercel

@@ -25,7 +25,7 @@ export const metadata: Metadata = {
   title: "Global IPTV — Explore Live TV From Around the World",
   description:
     "Browse thousands of free live TV channels from around the world in one global directory.",
-  generator: "v0.app",
+  applicationName: "Global IPTV",
 }
 
 export const viewport: Viewport = {
