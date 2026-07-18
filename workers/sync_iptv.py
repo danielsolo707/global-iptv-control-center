@@ -71,7 +71,7 @@ async def main() -> None:
     for channel_id, row in rows_by_id.items():
         old = existing_by_id.get(channel_id)
         if old and old["stream_url"] == row["stream_url"]:
-            row.pop("status")
+            row["status"] = old.get("status") or "checking"
         elif old:
             row["fail_count"] = 0
 
