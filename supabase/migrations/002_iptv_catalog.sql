@@ -106,7 +106,7 @@ grant execute on function public.catalog_statistics() to anon, authenticated;
 -- controlled and can be toggled in Supabase or the admin interface.
 insert into public.countries (name, code, enabled) values
   ('United States', 'US', true),
-  ('United Kingdom', 'GB', true),
+  ('United Kingdom', 'UK', true),
   ('Germany', 'DE', true),
   ('France', 'FR', true),
   ('Iran', 'IR', true),

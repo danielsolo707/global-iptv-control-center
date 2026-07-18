@@ -22,16 +22,16 @@ def parse_m3u(document: str, metadata: dict[str, dict]) -> list[dict]:
             pending = {"attrs": attrs, "name": line.rsplit(",", 1)[-1].strip()}
         elif pending and line and not line.startswith("#"):
             channel_id = pending["attrs"].get("tvg-id", "")
-            source = metadata.get(channel_id, {})
+            source = metadata.get(channel_id) or metadata.get(re.sub(r"@[A-Za-z0-9]+$", "", channel_id)) or {}
             countries = source.get("country") or []
-            country_code = countries[0].upper() if countries else None
+            country_code = (countries[0] if isinstance(countries, list) else countries).upper() if countries else None
             if channel_id and country_code:
                 entries.append({
                     "channel_id": channel_id,
                     "name": source.get("name") or pending["name"],
                     "country_code": country_code,
-                    "category": (source.get("categories") or [None])[0],
-                    "language": (source.get("languages") or [None])[0],
+                    "category": (source.get("categories") or [None])[0] if isinstance(source.get("categories"), list) else source.get("categories"),
+                    "language": (source.get("languages") or [None])[0] if isinstance(source.get("languages"), list) else source.get("languages"),
                     "logo": pending["attrs"].get("tvg-logo") or source.get("logo"),
                     "stream_url": line,
                 })
