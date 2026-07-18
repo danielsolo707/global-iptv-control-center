@@ -1,47 +1,43 @@
 import { Hero } from "@/components/home/hero"
 import { Rail, SectionHeader } from "@/components/ui/primitives"
 import { ChannelCard, CountryCard, CategoryCard } from "@/components/cards"
-import { Flame, Globe, LayoutGrid, Radio, Sparkles, Clock } from "lucide-react"
-import { getAllData, getTrendingChannels, getTrendingCountries } from "@/lib/api-client"
+import { Globe, LayoutGrid, Radio } from "lucide-react"
+import { getAllData, getFeaturedChannels, getTopCountries } from "@/lib/api-client"
 
 export default async function HomePage() {
-  const [{ channels, countries, categories, stats }, trendingChannels, trendingCountries] = await Promise.all([
+  const [{ countries, categories, stats }, featuredChannels, topCountries] = await Promise.all([
     getAllData(),
-    getTrendingChannels(),
-    getTrendingCountries(),
+    getFeaturedChannels(),
+    getTopCountries(),
   ])
-
-  const featured = channels.slice(0, 8)
-  const recentlyAdded = [...channels].reverse().slice(0, 8)
-  const popular = [...channels].sort((a, b) => b.viewers - a.viewers).slice(0, 8)
 
   const countryMap = new Map(countries.map((c) => [c.slug, c]))
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-12">
-      <Hero stats={stats} countries={countries} />
+      <Hero stats={stats} />
 
       <section>
         <SectionHeader
-          title="Trending Live Channels"
+          title="Live Channels"
           icon={<Radio className="size-5 text-red-400" />}
           href="/trending"
         />
         <Rail>
-          {trendingChannels.map((c) => (
-            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} />
+          {featuredChannels.map((c) => (
+            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} className="w-64 shrink-0 snap-start" />
           ))}
         </Rail>
       </section>
 
       <section>
         <SectionHeader
-          title="Trending Countries"
-          icon={<Flame className="size-5 text-orange-400" />}
+          title="Countries with the Most Channels"
+          icon={<Globe className="size-5 text-emerald-400" />}
           href="/countries"
         />
         <Rail>
-          {trendingCountries.map((c) => (
+          {topCountries.map((c) => (
             <div key={c.slug} className="w-44 shrink-0 snap-start md:w-52">
               <CountryCard country={c} />
             </div>
@@ -62,44 +58,6 @@ export default async function HomePage() {
         </Rail>
       </section>
 
-      <section>
-        <SectionHeader
-          title="Featured Channels"
-          icon={<Sparkles className="size-5 text-purple" />}
-          href="/trending"
-        />
-        <Rail>
-          {featured.map((c) => (
-            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} />
-          ))}
-        </Rail>
-      </section>
-
-      <section>
-        <SectionHeader
-          title="Popular Right Now"
-          icon={<Globe className="size-5 text-emerald-400" />}
-          href="/trending"
-        />
-        <Rail>
-          {popular.map((c) => (
-            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} />
-          ))}
-        </Rail>
-      </section>
-
-      <section>
-        <SectionHeader
-          title="Recently Added"
-          icon={<Clock className="size-5 text-muted-foreground" />}
-          href="/trending"
-        />
-        <Rail>
-          {recentlyAdded.map((c) => (
-            <ChannelCard key={c.slug} channel={c} country={countryMap.get(c.countrySlug)} />
-          ))}
-        </Rail>
-      </section>
     </div>
   )
 }

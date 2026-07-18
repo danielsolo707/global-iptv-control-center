@@ -6,8 +6,8 @@ import { EmptyState } from "@/components/ui/primitives"
 import { useApp } from "@/components/app-provider"
 import { useEffect, useState } from "react"
 import type { IptvChannel, IptvCountry } from "@/lib/types"
-import { getChannel, getCountry, getChannels, getCountries } from "@/lib/api-client"
-import { Heart, Globe } from "lucide-react"
+import { getChannels, getCountries } from "@/lib/api-client"
+import { Heart } from "lucide-react"
 
 export default function FavoritesPage() {
   const { favorites, favoriteCountries } = useApp()
@@ -35,7 +35,7 @@ export default function FavoritesPage() {
           icon={<Heart className="size-8" />}
           title="No favorites yet"
           description="Add channels and countries to your favorites to see them here."
-          action={{ label: "Explore Channels", href: "/trending" }}
+          action={{ label: "Browse live channels", href: "/trending" }}
         />
       )}
 

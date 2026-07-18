@@ -1,5 +1,7 @@
-import type { IptvChannel, IptvCountry, IptvCategory, IptvStats, IptvScheduleItem } from "./types"
-import { fetchIptvData, searchChannels, programSchedule as _programSchedule } from "./iptv-service"
+import type { IptvChannel, IptvCountry, IptvCategory, IptvStats } from "./types"
+import { fetchIptvData, searchChannels } from "./iptv-service"
+
+const CLIENT_CACHE_TTL_MS = 2 * 60 * 1000
 
 // Server-side: call service directly
 // Client-side: call API route
@@ -16,7 +18,7 @@ let clientCache: {
 } | null = null
 
 function isClientCacheValid(): boolean {
-  return clientCache !== null && Date.now() - clientCache.lastUpdate < 5 * 60 * 1000
+  return clientCache !== null && Date.now() - clientCache.lastUpdate < CLIENT_CACHE_TTL_MS
 }
 
 async function fetchData(): Promise<{
@@ -40,7 +42,7 @@ async function fetchData(): Promise<{
     }
   }
 
-  const res = await fetch("/api/iptv", { next: { revalidate: 300 } })
+  const res = await fetch("/api/iptv", { cache: "no-store" })
   if (!res.ok) throw new Error("Failed to fetch IPTV data")
   const data = await res.json()
 
@@ -111,12 +113,12 @@ export async function channelsByCategory(slug: string): Promise<IptvChannel[]> {
   return channels.filter((c) => c.categorySlug === slug)
 }
 
-export async function getTrendingChannels(): Promise<IptvChannel[]> {
+export async function getFeaturedChannels(): Promise<IptvChannel[]> {
   const { channels } = await fetchData()
-  return channels.filter((c) => c.trending).slice(0, 20)
+  return channels.slice(0, 20)
 }
 
-export async function getTrendingCountries(): Promise<IptvCountry[]> {
+export async function getTopCountries(): Promise<IptvCountry[]> {
   const { countries } = await fetchData()
   return countries.slice(0, 12)
 }
@@ -125,9 +127,15 @@ export async function searchIptv(query: string): Promise<{
   channels: IptvChannel[]
   countries: IptvCountry[]
   categories: IptvCategory[]
+  totals?: {
+    channels: number
+    countries: number
+    categories: number
+  }
+  truncated?: boolean
 }> {
   if (!query || query.length < 2) {
-    return { channels: [], countries: [], categories: [] }
+    return { channels: [], countries: [], categories: [], totals: { channels: 0, countries: 0, categories: 0 } }
   }
 
   // Server-side: use service directly
@@ -138,8 +146,4 @@ export async function searchIptv(query: string): Promise<{
   const res = await fetch(`/api/iptv/search?q=${encodeURIComponent(query)}`)
   if (!res.ok) throw new Error("Search failed")
   return res.json()
-}
-
-export function getProgramSchedule(seed = 0): IptvScheduleItem[] {
-  return _programSchedule(seed)
 }

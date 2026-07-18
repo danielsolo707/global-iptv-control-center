@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/primitives"
 import { useApp } from "@/components/app-provider"
 import { useEffect, useState } from "react"
 import type { IptvChannel, IptvCountry } from "@/lib/types"
-import { getChannel, getCountry, getChannels, getCountries } from "@/lib/api-client"
+import { getChannels, getCountries } from "@/lib/api-client"
 import { History, Clock, Play } from "lucide-react"
 
 export default function RecentlyPage() {
@@ -54,7 +54,7 @@ export default function RecentlyPage() {
           icon={<History className="size-8" />}
           title="No recent activity"
           description="Channels and countries you visit will appear here."
-          action={{ label: "Start Watching", href: "/trending" }}
+          action={{ label: "Browse live channels", href: "/trending" }}
         />
       )}
 

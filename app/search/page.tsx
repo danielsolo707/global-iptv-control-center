@@ -2,12 +2,13 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import Link from "next/link"
 import { ChannelCard, CountryCard, CategoryCard } from "@/components/cards"
 import { SectionHeader, EmptyState } from "@/components/ui/primitives"
 import { searchIptv } from "@/lib/api-client"
 import type { IptvChannel, IptvCountry, IptvCategory } from "@/lib/types"
-import { Search, Radio, Globe, LayoutGrid, Clock } from "lucide-react"
+import { Search, Radio, Globe, LayoutGrid } from "lucide-react"
+
+type SearchScope = "all" | "channels" | "countries" | "categories"
 
 function SearchContent() {
   const searchParams = useSearchParams()
@@ -16,18 +17,42 @@ function SearchContent() {
     channels: IptvChannel[]
     countries: IptvCountry[]
     categories: IptvCategory[]
+    totals?: {
+      channels: number
+      countries: number
+      categories: number
+    }
+    truncated?: boolean
   } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+  const [scope, setScope] = useState<SearchScope>("all")
 
   useEffect(() => {
     if (query.length < 2) {
       setResults(null)
+      setError(false)
+      setLoading(false)
       return
     }
+
+    let cancelled = false
     setLoading(true)
+    setError(false)
     searchIptv(query)
-      .then((r) => setResults(r))
-      .finally(() => setLoading(false))
+      .then((r) => {
+        if (!cancelled) setResults(r)
+      })
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [query])
 
   if (!query) {
@@ -51,9 +76,21 @@ function SearchContent() {
     )
   }
 
+  if (error) {
+    return (
+      <EmptyState
+        icon={<Search className="size-8" />}
+        title="Search is temporarily unavailable"
+        description="Please check your connection and try again in a moment."
+      />
+    )
+  }
+
   if (!results) return null
 
-  const total = results.channels.length + results.countries.length + results.categories.length
+  const total = (results.totals?.channels ?? results.channels.length)
+    + (results.totals?.countries ?? results.countries.length)
+    + (results.totals?.categories ?? results.categories.length)
 
   if (total === 0) {
     return (
@@ -67,10 +104,35 @@ function SearchContent() {
 
   return (
     <div className="space-y-10">
-      {results.channels.length > 0 && (
+      {results.truncated && (
+        <p className="rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-sm text-muted-foreground">
+          Showing the first 100 matches. Refine your search to narrow the results.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Search result type">
+        {([
+          ["all", "All", total],
+          ["channels", "Channels", results.totals?.channels ?? results.channels.length],
+          ["countries", "Countries", results.totals?.countries ?? results.countries.length],
+          ["categories", "Categories", results.totals?.categories ?? results.categories.length],
+        ] as const).map(([value, label, count]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={scope === value}
+            onClick={() => setScope(value)}
+            className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${scope === value ? "border-blue bg-blue/15 text-foreground" : "border-border/60 bg-card text-muted-foreground hover:bg-secondary"}`}
+          >
+            {label} <span className="ml-1 text-xs opacity-75">{count}</span>
+          </button>
+        ))}
+      </div>
+
+      {(scope === "all" || scope === "channels") && results.channels.length > 0 && (
         <section>
           <SectionHeader
-            title={`Channels (${results.channels.length})`}
+            title={`Channels (${results.totals?.channels ?? results.channels.length})`}
             icon={<Radio className="size-5 text-red-400" />}
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -81,10 +143,10 @@ function SearchContent() {
         </section>
       )}
 
-      {results.countries.length > 0 && (
+      {(scope === "all" || scope === "countries") && results.countries.length > 0 && (
         <section>
           <SectionHeader
-            title={`Countries (${results.countries.length})`}
+            title={`Countries (${results.totals?.countries ?? results.countries.length})`}
             icon={<Globe className="size-5 text-blue" />}
           />
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
@@ -95,10 +157,10 @@ function SearchContent() {
         </section>
       )}
 
-      {results.categories.length > 0 && (
+      {(scope === "all" || scope === "categories") && results.categories.length > 0 && (
         <section>
           <SectionHeader
-            title={`Categories (${results.categories.length})`}
+            title={`Categories (${results.totals?.categories ?? results.categories.length})`}
             icon={<LayoutGrid className="size-5 text-purple" />}
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

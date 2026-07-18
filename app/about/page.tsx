@@ -26,13 +26,13 @@ export default async function AboutPage() {
         </div>
         <div className="rounded-2xl border border-border/60 bg-card p-6 text-center">
           <Radio className="mx-auto size-8 text-emerald-400" />
-          <p className="mt-3 text-2xl font-extrabold">{stats.hd.toLocaleString()}</p>
-          <p className="text-sm text-muted-foreground">HD Channels</p>
+          <p className="mt-3 text-2xl font-extrabold">IPTV-ORG</p>
+          <p className="text-sm text-muted-foreground">Live Directory Source</p>
         </div>
         <div className="rounded-2xl border border-border/60 bg-card p-6 text-center">
           <Tv className="mx-auto size-8 text-amber-400" />
-          <p className="mt-3 text-2xl font-extrabold">{stats.uhd.toLocaleString()}</p>
-          <p className="text-sm text-muted-foreground">4K Channels</p>
+          <p className="mt-3 text-2xl font-extrabold">Free</p>
+          <p className="text-sm text-muted-foreground">Free-to-Air Access</p>
         </div>
       </div>
 
@@ -44,14 +44,14 @@ export default async function AboutPage() {
             <span className="grid size-10 place-items-center rounded-xl bg-blue/10 text-lg font-bold text-blue">1</span>
             <h3 className="text-lg font-bold">Browse</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Explore thousands of free-to-air live TV channels from {stats.countries} countries. Use the globe, search, or browse by country and category.
+              Browse thousands of free-to-air live TV channels from {stats.countries} countries. Search or browse by country and category.
             </p>
           </div>
           <div className="space-y-2">
             <span className="grid size-10 place-items-center rounded-xl bg-purple/10 text-lg font-bold text-purple">2</span>
             <h3 className="text-lg font-bold">Select</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Click on any channel to see its details, current program, schedule, and related channels from the same country.
+              Click on any channel to see its details, language, and related channels from the same country.
             </p>
           </div>
           <div className="space-y-2">

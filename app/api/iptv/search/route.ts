@@ -6,7 +6,12 @@ export async function GET(request: Request) {
   const q = searchParams.get("q") || ""
 
   if (!q || q.length < 2) {
-    return NextResponse.json({ channels: [], countries: [], categories: [] })
+    return NextResponse.json({
+      channels: [],
+      countries: [],
+      categories: [],
+      totals: { channels: 0, countries: 0, categories: 0 },
+    })
   }
 
   try {

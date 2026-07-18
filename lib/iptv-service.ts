@@ -1,4 +1,4 @@
-import type { IptvChannel, IptvCountry, IptvCategory, IptvStats } from "./types"
+import type { IptvChannel, IptvCountry, IptvCategory, IptvStats, IptvStream } from "./types"
 
 /*
  * Global IPTV Data Service
@@ -7,20 +7,27 @@ import type { IptvChannel, IptvCountry, IptvCategory, IptvStats } from "./types"
  */
 
 const IPTV_BASE = "https://iptv-org.github.io/api"
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const CACHE_TTL_MS = 2 * 60 * 1000 // Keep provider additions and removals in sync quickly.
+const SEARCH_RESULT_LIMIT = 100
+const UNAVAILABLE_CHANNEL_TTL_MS = 10 * 60 * 1000
 
 // In-memory cache
-let cache: {
+type IptvData = {
   channels: IptvChannel[]
   countries: IptvCountry[]
   categories: IptvCategory[]
   stats: IptvStats
+}
+
+let cache: IptvData & {
   lastUpdate: number
 } | null = null
+let inFlightRequest: Promise<IptvData> | null = null
+const reportedUnavailableChannels = new Map<string, number>()
 
 // Popular country codes (countries with significant free-to-air presence)
 const POPULAR_COUNTRY_CODES = new Set([
-  "US", "GB", "JP", "KR", "FR", "DE", "IN", "BR", "ES", "IT",
+  "US", "UK", "JP", "KR", "FR", "DE", "IN", "BR", "ES", "IT",
   "RU", "CN", "MX", "CA", "AU", "NL", "TR", "ID", "SA", "AE",
   "IR", "TH", "VN", "PL", "SE", "NO", "DK", "FI", "BE", "CH",
   "AT", "PT", "GR", "IL", "ZA", "EG", "PK", "BD", "MY", "PH",
@@ -64,7 +71,8 @@ const DEFAULT_CATEGORY = CATEGORY_MAP.entertainment
 
 // Country flag emoji helper
 function getFlagEmoji(countryCode: string): string {
-  const code = countryCode.toUpperCase()
+  const code = countryCode.toUpperCase() === "UK" ? "GB" : countryCode.toUpperCase()
+  if (!code || code.length !== 2 || !/^[A-Z]{2}$/.test(code)) return "🏳️"
   return code
     .split("")
     .map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
@@ -80,7 +88,7 @@ function getRegion(countryCode: string): string {
     GT: "Americas", HN: "Americas", SV: "Americas", NI: "Americas", DO: "Americas",
     CU: "Americas", PR: "Americas", JM: "Americas", TT: "Americas", BB: "Americas",
     BS: "Americas", BZ: "Americas",
-    GB: "Europe", FR: "Europe", DE: "Europe", IT: "Europe", ES: "Europe",
+    GB: "Europe", UK: "Europe", FR: "Europe", DE: "Europe", IT: "Europe", ES: "Europe",
     NL: "Europe", BE: "Europe", CH: "Europe", AT: "Europe", PT: "Europe",
     GR: "Europe", SE: "Europe", NO: "Europe", DK: "Europe", FI: "Europe",
     IE: "Europe", IS: "Europe", PL: "Europe", CZ: "Europe", HU: "Europe",
@@ -106,28 +114,59 @@ const logoColors = [
   "oklch(0.7 0.14 200)",
 ]
 
-const nowShows = [
-  "Evening News Live", "Champions Match", "Prime Movie Night", "Morning Show",
-  "Live Concert", "World Report", "Tech Today", "Cinema Classics",
-  "Documentary Special", "Sports Highlights", "Weather Update", "Comedy Hour",
-]
-const nextShows = [
-  "Weather Update", "Post-Match Analysis", "Late Night Film", "Talk Hour",
-  "Music Countdown", "Global Briefing", "Startup Stories", "Documentary Hour",
-  "Evening Drama", "News Roundup", "Travel Show", "Late Night Comedy",
-]
-
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed * 9999) * 10000
-  return x - Math.floor(x)
+const COUNTRY_IMAGES: Record<string, string> = {
+  US: "/countries/usa.png",
+  UK: "/countries/uk.png",
+  IN: "/countries/india.png",
+  DE: "/countries/germany.png",
+  FR: "/countries/france.png",
+  BR: "/countries/brazil.png",
+  IT: "/countries/italy.png",
+  IR: "/countries/iran.png",
+  JP: "/countries/japan.png",
+  KR: "/countries/korea.png",
+  ES: "/countries/spain.png",
+  AE: "/countries/uae.png",
 }
 
-export async function fetchIptvData(): Promise<{
-  channels: IptvChannel[]
-  countries: IptvCountry[]
-  categories: IptvCategory[]
-  stats: IptvStats
-}> {
+function countryImageFor(code: string): string {
+  return COUNTRY_IMAGES[code.toUpperCase()] || ""
+}
+
+function qualityValue(quality?: string): number {
+  if (!quality) return 0
+  if (/4k|2160/i.test(quality)) return 2160
+  const match = quality.match(/(\d{3,4})p?/i)
+  return match ? Number(match[1]) : 0
+}
+
+function qualityFromStreams(streams: IptvStream[]): IptvChannel["quality"] {
+  const max = Math.max(...streams.map((stream) => qualityValue(stream.quality)), 0)
+  if (max >= 2160) return "4K"
+  if (max >= 720) return "HD"
+  if (max > 0) return "SD"
+  return "Unknown"
+}
+
+function isKnownUnavailableStream(stream: { status?: unknown; url?: unknown }): boolean {
+  if (typeof stream.url !== "string" || !/^https?:\/\//i.test(stream.url)) return true
+  if (typeof stream.status !== "string") return false
+  return /^(?:offline|error|timeout|broken|unavailable)$/i.test(stream.status.trim())
+}
+
+function pruneUnavailableChannels() {
+  const now = Date.now()
+  for (const [slug, expiresAt] of reportedUnavailableChannels) {
+    if (expiresAt <= now) reportedUnavailableChannels.delete(slug)
+  }
+}
+
+function isReportedUnavailable(slug: string): boolean {
+  return (reportedUnavailableChannels.get(slug.toLowerCase()) || 0) > Date.now()
+}
+
+export async function fetchIptvData(): Promise<IptvData> {
+  pruneUnavailableChannels()
   // Check cache first
   if (cache && Date.now() - cache.lastUpdate < CACHE_TTL_MS) {
     return {
@@ -138,12 +177,24 @@ export async function fetchIptvData(): Promise<{
     }
   }
 
+  // Several server components can ask for the same data during one render.
+  // Share a single refresh so we don't repeatedly download the large source files.
+  if (!inFlightRequest) {
+    inFlightRequest = loadIptvData().finally(() => {
+      inFlightRequest = null
+    })
+  }
+
+  return inFlightRequest
+}
+
+async function loadIptvData(): Promise<IptvData> {
   try {
     // Fetch all IPTV data in parallel
     const [channelsRes, streamsRes, countriesRes] = await Promise.all([
-      fetch(`${IPTV_BASE}/channels.json`, { next: { revalidate: 300 } }),
-      fetch(`${IPTV_BASE}/streams.json`, { next: { revalidate: 300 } }),
-      fetch(`${IPTV_BASE}/countries.json`, { next: { revalidate: 300 } }),
+      fetch(`${IPTV_BASE}/channels.json`, { cache: "no-store", signal: AbortSignal.timeout(30_000) }),
+      fetch(`${IPTV_BASE}/streams.json`, { cache: "no-store", signal: AbortSignal.timeout(30_000) }),
+      fetch(`${IPTV_BASE}/countries.json`, { cache: "no-store", signal: AbortSignal.timeout(30_000) }),
     ])
 
     if (!channelsRes.ok || !streamsRes.ok || !countriesRes.ok) {
@@ -156,29 +207,38 @@ export async function fetchIptvData(): Promise<{
       countriesRes.json(),
     ])
 
-    // Build stream lookup by channel ID
-    const streamMap = new Map<string, string>()
+    // Keep every provider-published stream per channel. A working fallback is more useful
+    // than silently losing alternatives when a source goes offline.
+    const streamMap = new Map<string, IptvStream[]>()
     for (const s of streamsData) {
-      if (s.channel && s.url) {
-        streamMap.set(s.channel, s.url)
+      if (s.channel && !isKnownUnavailableStream(s)) {
+        const options = streamMap.get(s.channel) || []
+        const option: IptvStream = {
+          url: s.url,
+          label: s.label || s.title || undefined,
+          quality: s.quality || undefined,
+          referrer: s.referrer || undefined,
+        }
+        if (!options.some((existing) => existing.url === option.url)) {
+          options.push(option)
+          streamMap.set(s.channel, options)
+        }
       }
     }
 
     // Build country lookup
-    const countryMetaMap = new Map<string, { name: string; lat: number; lng: number }>()
+    const countryMetaMap = new Map<string, { name: string }>()
     for (const c of countriesData) {
       if (c.code && c.name) {
         countryMetaMap.set(c.code, {
           name: c.name,
-          lat: c.latitude ?? 0,
-          lng: c.longitude ?? 0,
         })
       }
     }
 
     // Process channels - filter to popular countries only
-    const countryChannelMap = new Map<string, IptvChannel[]>()
     const processedChannels: IptvChannel[] = []
+    const existingSlugs = new Set<string>()
 
     for (let i = 0; i < channelsData.length; i++) {
       const ch = channelsData[i]
@@ -190,43 +250,50 @@ export async function fetchIptvData(): Promise<{
         : "entertainment"
       const catMap = CATEGORY_MAP[categoryKey] || DEFAULT_CATEGORY
 
-      const streamUrl = streamMap.get(ch.id)
-      if (!streamUrl) continue // Only include channels with actual streams
+      const streams = streamMap.get(ch.id)
+      if (!streams || streams.length === 0) continue // Only include channels with provider-published streams
 
-      const slug = ch.name
+      const baseSlug = ch.name
         ? ch.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
         : ch.id
 
-      const seed = i + 1
+      // Ensure unique slugs by appending country code and counter if needed
+      let slug = `${baseSlug}-${countryCode.toLowerCase()}`
+      let counter = 1
+      while (existingSlugs.has(slug)) {
+        counter++
+        slug = `${baseSlug}-${countryCode.toLowerCase()}-${counter}`
+      }
+      existingSlugs.add(slug)
+
+      const quality = qualityFromStreams(streams)
+
       const channel: IptvChannel = {
         slug: slug || `ch-${i}`,
         name: ch.name || "Unknown Channel",
         logoColor: logoColors[i % logoColors.length],
         countrySlug: countryCode.toLowerCase(),
+        countryName: countryMetaMap.get(countryCode)?.name || "Country not listed",
         categorySlug: catMap.slug,
         language: ch.languages && Array.isArray(ch.languages) && ch.languages.length > 0
           ? ch.languages[0]
           : "English",
-        quality: ch.resolution?.includes("4K") || ch.resolution?.includes("2160")
-          ? "4K"
-          : ch.resolution?.includes("1080") || ch.resolution?.includes("720")
-            ? "HD"
-            : "SD",
-        viewers: Math.floor(2000 + seededRandom(seed) * 48000),
+        quality,
         image: catMap.image,
-        now: nowShows[Math.floor(seededRandom(seed * 7) * nowShows.length)],
-        next: nextShows[Math.floor(seededRandom(seed * 13) * nextShows.length)],
-        description: `${ch.name || "Channel"} broadcasts live ${catMap.name.toLowerCase()} programming from ${countryMetaMap.get(countryCode)?.name || countryCode}.`,
-        trending: seededRandom(seed * 3) > 0.7,
-        streamUrl,
+        description: `${ch.name || "Channel"} broadcasts live ${catMap.name.toLowerCase()} programming from ${countryMetaMap.get(countryCode)?.name || "its country of origin"}.`,
+        streamUrl: streams[0].url,
+        streams,
       }
 
       processedChannels.push(channel)
+    }
 
-      if (!countryChannelMap.has(countryCode.toLowerCase())) {
-        countryChannelMap.set(countryCode.toLowerCase(), [])
-      }
-      countryChannelMap.get(countryCode.toLowerCase())!.push(channel)
+    const visibleChannels = processedChannels.filter((channel) => !isReportedUnavailable(channel.slug))
+    const countryChannelMap = new Map<string, IptvChannel[]>()
+    for (const channel of visibleChannels) {
+      const channelList = countryChannelMap.get(channel.countrySlug) || []
+      channelList.push(channel)
+      countryChannelMap.set(channel.countrySlug, channelList)
     }
 
     // Build countries from channel data
@@ -238,7 +305,7 @@ export async function fetchIptvData(): Promise<{
       const hdCount = chs.filter((c) => c.quality === "HD").length
       const uhdCount = chs.filter((c) => c.quality === "4K").length
       const langs = Array.from(new Set(chs.map((c) => c.language)))
-      const pop = Math.min(98, Math.floor(50 + chs.length * 0.3 + seededRandom(code.charCodeAt(0)) * 30))
+      const pop = chs.length
 
       processedCountries.push({
         slug: code.toLowerCase(),
@@ -246,24 +313,21 @@ export async function fetchIptvData(): Promise<{
         flag: getFlagEmoji(code),
         code: code.toUpperCase(),
         region: getRegion(code),
-        image: `/countries/${code.toLowerCase()}.png`,
+        image: countryImageFor(code),
         channels: chs.length,
-        liveNow: Math.floor(chs.length * 0.3 + seededRandom(code.charCodeAt(0)) * chs.length * 0.4),
         popularity: pop,
         hd: hdCount,
         uhd: uhdCount,
         languages: langs.length > 0 ? langs : ["English"],
-        lat: meta.lat,
-        lng: meta.lng,
       })
     }
 
-    // Sort countries by popularity and channel count
-    processedCountries.sort((a, b) => b.popularity - a.popularity || b.channels - a.channels)
+    // The source does not publish viewership trends, so rank countries by the real size of their live directory.
+    processedCountries.sort((a, b) => b.channels - a.channels || a.name.localeCompare(b.name))
 
     // Build categories from channel data
     const categoryMap = new Map<string, { cat: IptvCategory; count: number }>()
-    for (const ch of processedChannels) {
+    for (const ch of visibleChannels) {
       const catKey = ch.categorySlug
       if (!categoryMap.has(catKey)) {
         const catData = Object.values(CATEGORY_MAP).find((c) => c.slug === catKey) || DEFAULT_CATEGORY
@@ -288,22 +352,22 @@ export async function fetchIptvData(): Promise<{
       .sort((a, b) => b.channels - a.channels)
 
     const stats: IptvStats = {
-      channels: processedChannels.length,
+      channels: visibleChannels.length,
       countries: processedCountries.length,
-      hd: processedChannels.filter((c) => c.quality === "HD").length,
-      uhd: processedChannels.filter((c) => c.quality === "4K").length,
+      hd: visibleChannels.filter((c) => c.quality === "HD").length,
+      uhd: visibleChannels.filter((c) => c.quality === "4K").length,
     }
 
     // Update cache
     cache = {
-      channels: processedChannels,
+      channels: visibleChannels,
       countries: processedCountries,
       categories: processedCategories,
       stats,
       lastUpdate: Date.now(),
     }
 
-    return { channels: processedChannels, countries: processedCountries, categories: processedCategories, stats }
+    return { channels: visibleChannels, countries: processedCountries, categories: processedCategories, stats }
   } catch (error) {
     console.error("IPTV data fetch error:", error)
     // Return cached data if available, otherwise throw
@@ -321,8 +385,21 @@ export async function fetchIptvData(): Promise<{
 
 // Force refresh
 export async function refreshIptvData(): Promise<void> {
+  // Let an active refresh finish before starting an explicitly requested one.
+  if (inFlightRequest) {
+    await inFlightRequest.catch(() => undefined)
+  }
   cache = null
   await fetchIptvData()
+}
+
+// The upstream API does not currently publish a live health field. When every
+// provider-published source fails in the player, suppress that channel briefly
+// and refresh from the source instead of continuing to advertise a dead stream.
+export function reportChannelUnavailable(slug: string): void {
+  if (!slug) return
+  reportedUnavailableChannels.set(slug.toLowerCase(), Date.now() + UNAVAILABLE_CHANNEL_TTL_MS)
+  cache = null
 }
 
 // Get last update time
@@ -356,49 +433,47 @@ export async function channelsByCategory(slug: string) {
   return channels.filter((c) => c.categorySlug === slug.toLowerCase())
 }
 
-export async function trendingChannels() {
+export async function featuredChannels() {
   const { channels } = await fetchIptvData()
-  return channels.filter((c) => c.trending).slice(0, 20)
+  return channels.slice(0, 20)
 }
 
-export async function trendingCountries() {
+export async function topCountries() {
   const { countries } = await fetchIptvData()
   return countries.slice(0, 12)
 }
 
-export async function searchChannels(query: string) {
-  const q = query.toLowerCase()
+export async function searchChannels(query: string, limit = SEARCH_RESULT_LIMIT) {
+  const q = query.trim().toLowerCase()
   const { channels, countries, categories } = await fetchIptvData()
+  const safeLimit = Math.min(Math.max(limit, 1), SEARCH_RESULT_LIMIT)
+  const countryNames = new Map(countries.map((country) => [country.slug, `${country.name} ${country.code}`.toLowerCase()]))
+  const categoryNames = new Map(categories.map((category) => [category.slug, `${category.name} ${category.slug}`.toLowerCase()]))
 
   const matchedChannels = channels.filter(
     (c) =>
       c.name.toLowerCase().includes(q) ||
       c.language.toLowerCase().includes(q) ||
-      c.description.toLowerCase().includes(q),
+      c.description.toLowerCase().includes(q) ||
+      countryNames.get(c.countrySlug)?.includes(q) ||
+      categoryNames.get(c.categorySlug)?.includes(q),
   )
 
   const matchedCountries = countries.filter(
     (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase() === q,
   )
 
-  const matchedCategories = categories.filter((c) => c.name.toLowerCase().includes(q))
+  const matchedCategories = categories.filter((c) => c.name.toLowerCase().includes(q) || c.slug.includes(q))
 
-  return { channels: matchedChannels, countries: matchedCountries, categories: matchedCategories }
-}
-
-export function programSchedule(seed = 0) {
-  const titles = [
-    "Morning Brief", "Live Talk", "Headline News", "Feature Film",
-    "Sports Central", "World Today", "Music Hour", "Prime Time",
-    "Late Edition", "Night Owl", "Morning Show", "Afternoon Live",
-  ]
-  return Array.from({ length: 12 }).map((_, i) => {
-    const hour = (6 + i * 2) % 24
-    return {
-      time: `${hour.toString().padStart(2, "0")}:00`,
-      title: titles[(i + seed) % titles.length],
-      duration: "2h",
-      live: i === 2 || i === 3,
-    }
-  })
+  return {
+    channels: matchedChannels.slice(0, safeLimit),
+    countries: matchedCountries.slice(0, safeLimit),
+    categories: matchedCategories.slice(0, safeLimit),
+    totals: {
+      channels: matchedChannels.length,
+      countries: matchedCountries.length,
+      categories: matchedCategories.length,
+    },
+    truncated: matchedChannels.length > safeLimit || matchedCountries.length > safeLimit || matchedCategories.length > safeLimit,
+  }
 }

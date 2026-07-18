@@ -1,6 +1,5 @@
 import { Suspense } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { CountryCard } from "@/components/cards"
 import { EmptyState } from "@/components/ui/primitives"
 import { getCountries } from "@/lib/api-client"

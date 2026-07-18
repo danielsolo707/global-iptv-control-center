@@ -4,60 +4,83 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { VideoPlayer } from "@/components/video-player"
 import { ChannelCard } from "@/components/cards"
-import { SectionHeader, Badge, LiveDot, QualityBadge } from "@/components/ui/primitives"
+import { SectionHeader, Badge, EmptyState, LiveDot, QualityBadge } from "@/components/ui/primitives"
 import { useApp } from "@/components/app-provider"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import type { IptvChannel, IptvCountry } from "@/lib/types"
 import {
   getChannel,
   getCountry,
   channelsByCountry,
-  getTrendingChannels,
-  getProgramSchedule,
+  getFeaturedChannels,
 } from "@/lib/api-client"
 import {
   ArrowLeft,
   Heart,
   Globe,
-  Eye,
   Radio,
-  Clock,
-  Calendar,
-  SkipBack,
-  SkipForward,
 } from "lucide-react"
 
 export default function WatchPage() {
   const params = useParams()
   const slug = params.slug as string
-  const { isFavorite, toggleFavorite, addRecent } = useApp()
+  const { isFavorite, toggleFavorite, addRecent, settings } = useApp()
   const [channel, setChannel] = useState<IptvChannel | null>(null)
   const [country, setCountry] = useState<IptvCountry | null>(null)
   const [related, setRelated] = useState<IptvChannel[]>([])
-  const [trending, setTrending] = useState<IptvChannel[]>([])
-  const [schedule, setSchedule] = useState<ReturnType<typeof getProgramSchedule>>([])
+  const [featured, setFeatured] = useState<IptvChannel[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const reportUnavailable = useCallback(() => {
+    void fetch("/api/iptv/health", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug }),
+      keepalive: true,
+    }).catch(() => undefined)
+  }, [slug])
 
   useEffect(() => {
-    async function load() {
-      const ch = await getChannel(slug)
-      if (!ch) return
-      setChannel(ch)
-      addRecent(ch.slug)
+    let cancelled = false
 
-      const [co, coChannels, trend] = await Promise.all([
-        getCountry(ch.countrySlug),
-        channelsByCountry(ch.countrySlug),
-        getTrendingChannels(),
-      ])
-      setCountry(co || null)
-      setRelated(coChannels.filter((c) => c.slug !== slug).slice(0, 6))
-      setTrending(trend.filter((c) => c.slug !== slug).slice(0, 6))
-      setSchedule(getProgramSchedule(slug.length))
+    async function load() {
+      setLoading(true)
+      setLoadError(null)
+
+      try {
+        const ch = await getChannel(slug)
+        if (!ch) {
+          if (!cancelled) setLoadError("This channel is no longer available.")
+          return
+        }
+
+        const [co, coChannels, trend] = await Promise.all([
+          getCountry(ch.countrySlug),
+          channelsByCountry(ch.countrySlug),
+          getFeaturedChannels(),
+        ])
+        if (cancelled) return
+
+        setChannel(ch)
+        addRecent(ch.slug)
+        setCountry(co || null)
+        setRelated(coChannels.filter((c) => c.slug !== slug).slice(0, 6))
+        setFeatured(trend.filter((c) => c.slug !== slug).slice(0, 6))
+      } catch {
+        if (!cancelled) setLoadError("We couldn't load this channel. Please try again.")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
-    load()
+
+    void load()
+    return () => {
+      cancelled = true
+    }
   }, [slug, addRecent])
 
-  if (!channel) {
+  if (loading && !channel) {
     return (
       <div className="grid h-[60vh] place-items-center">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
@@ -68,20 +91,37 @@ export default function WatchPage() {
     )
   }
 
+  if (!channel) {
+    return (
+      <div className="grid min-h-[calc(100dvh-4rem)] place-items-center px-4">
+        <div className="w-full max-w-md">
+          <EmptyState
+            icon={<Radio className="size-8" />}
+            title="Channel unavailable"
+            description={loadError || "This channel is not available right now."}
+            action={{ label: "Browse live channels", href: "/trending" }}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="mx-auto max-w-[1600px] space-y-8">
+    <div className="mx-auto max-w-[1600px] space-y-8 px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
       {/* Player */}
       <div className="space-y-4">
         <Link
-          href={`/channel/${channel.slug}`}
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+          href={country ? `/countries/${country.slug}` : "/trending"}
+          className="inline-flex h-10 items-center gap-2.5 rounded-xl border border-transparent px-3 text-sm text-muted-foreground transition-colors hover:border-border/60 hover:bg-card hover:text-foreground"
         >
-          <ArrowLeft className="size-4" /> Channel Info
+          <ArrowLeft className="size-4" /> Back to {country?.name || "live channels"}
         </Link>
 
         <VideoPlayer
-          src={channel.streamUrl || ""}
-          className="aspect-video w-full"
+          sources={channel.streams}
+          className="watch-player-frame aspect-video w-full"
+          autoPlay={settings.autoplay}
+          onAllSourcesUnavailable={reportUnavailable}
         />
 
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -97,7 +137,7 @@ export default function WatchPage() {
                 <h1 className="text-xl font-bold">{channel.name}</h1>
                 <LiveDot />
               </div>
-              <p className="text-sm text-muted-foreground">{channel.now}</p>
+              <p className="text-sm text-muted-foreground">{channel.language || "Language not listed"}</p>
             </div>
           </div>
 
@@ -115,79 +155,31 @@ export default function WatchPage() {
         </div>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-3">
-        {/* Left - Info & Schedule */}
-        <div className="space-y-6 lg:col-span-2">
-          <div className="flex flex-wrap gap-2">
-            <Badge className="bg-secondary">
-              <Globe className="size-3" /> {country?.flag} {country?.name}
-            </Badge>
-            <QualityBadge quality={channel.quality} />
-            <Badge className="bg-secondary">
-              <Eye className="size-3" /> {channel.viewers.toLocaleString()} watching
-            </Badge>
-          </div>
-
-          <section>
-            <SectionHeader title="Schedule" icon={<Calendar className="size-5 text-blue" />} />
-            <div className="space-y-2">
-              {schedule.map((item, i) => (
-                <div
-                  key={i}
-                  className={`flex items-center gap-4 rounded-xl border px-4 py-3 ${
-                    item.live
-                      ? "border-red-500/30 bg-red-500/5"
-                      : "border-border/60 bg-card/50"
-                  }`}
-                >
-                  <span className="w-12 text-sm font-mono font-medium">{item.time}</span>
-                  <span className="flex-1 text-sm font-medium">{item.title}</span>
-                  <span className="text-xs text-muted-foreground">{item.duration}</span>
-                  {item.live && <LiveDot />}
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {/* Right - Related */}
-        <div className="space-y-6">
-          {related.length > 0 && (
-            <section>
-              <SectionHeader title={`More from ${country?.name}`} />
-              <div className="space-y-3">
-                {related.map((c) => (
-                  <Link
-                    key={c.slug}
-                    href={`/watch/${c.slug}`}
-                    className="flex items-center gap-3 rounded-xl border border-border/60 bg-card p-3 transition-colors hover:bg-secondary"
-                  >
-                    <span
-                      className="grid size-10 shrink-0 place-items-center rounded-lg text-xs font-bold text-white"
-                      style={{ backgroundColor: c.logoColor }}
-                    >
-                      {c.name.slice(0, 2).toUpperCase()}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{c.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{c.now}</p>
-                    </div>
-                    <LiveDot />
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
+      <div className="flex flex-wrap gap-2">
+        <Badge className="bg-secondary">
+          <Globe className="size-3" /> {country?.name || "Country not listed"}
+        </Badge>
+        <QualityBadge quality={channel.quality} />
+        <Badge className="bg-secondary">{channel.language || "Language not listed"}</Badge>
       </div>
 
-      {/* Trending */}
-      {trending.length > 0 && (
+      {related.length > 0 && (
         <section>
-          <SectionHeader title="Trending Channels" icon={<Radio className="size-5 text-red-400" />} />
+          <SectionHeader title={`More from ${country?.name || "this country"}`} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {trending.map((c) => (
+            {related.map((c) => (
               <ChannelCard key={c.slug} channel={c} country={country || undefined} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {featured.length > 0 && (
+        <section>
+          <SectionHeader title="Explore More Live Channels" icon={<Radio className="size-5 text-red-400" />} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {featured.map((c) => (
+              <ChannelCard key={c.slug} channel={c} />
             ))}
           </div>
         </section>

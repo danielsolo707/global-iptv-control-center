@@ -88,7 +88,9 @@ export function Badge({
   )
 }
 
-export function QualityBadge({ quality }: { quality: "SD" | "HD" | "4K" }) {
+export function QualityBadge({ quality }: { quality: "SD" | "HD" | "4K" | "Unknown" }) {
+  if (quality === "Unknown") return null
+
   const map = {
     SD: "bg-muted text-muted-foreground",
     HD: "bg-blue/15 text-blue",

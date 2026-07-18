@@ -16,13 +16,10 @@ export type IptvCountry = {
   region: string
   image: string
   channels: number
-  liveNow: number
   popularity: number
   hd: number
   uhd: number
   languages: string[]
-  lat: number
-  lng: number
 }
 
 export type IptvChannel = {
@@ -30,23 +27,21 @@ export type IptvChannel = {
   name: string
   logoColor: string
   countrySlug: string
+  countryName: string
   categorySlug: string
   language: string
-  quality: "SD" | "HD" | "4K"
-  viewers: number
+  quality: "SD" | "HD" | "4K" | "Unknown"
   image: string
-  now: string
-  next: string
   description: string
-  trending?: boolean
   streamUrl?: string
+  streams: IptvStream[]
 }
 
-export type IptvScheduleItem = {
-  time: string
-  title: string
-  duration: string
-  live: boolean
+export type IptvStream = {
+  url: string
+  label?: string
+  quality?: string
+  referrer?: string
 }
 
 export type IptvStats = {

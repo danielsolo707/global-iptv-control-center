@@ -3,11 +3,9 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react"
 
 type Settings = {
-  quality: "Auto" | "HD" | "4K"
   autoplay: boolean
   reduceMotion: boolean
   highContrast: boolean
-  hardwareAccel: boolean
 }
 
 type AppState = {
@@ -25,11 +23,9 @@ type AppState = {
 }
 
 const defaultSettings: Settings = {
-  quality: "Auto",
   autoplay: true,
   reduceMotion: false,
   highContrast: false,
-  hardwareAccel: true,
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -60,9 +56,15 @@ function useStored<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => vo
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [favorites, setFavorites] = useStored<string[]>("gi_favorites", [])
-  const [favoriteCountries, setFavoriteCountries] = useStored<string[]>("gi_fav_countries", ["japan", "uk"])
-  const [recent, setRecent] = useStored<string[]>("gi_recent", ["global-sports-one", "prime-news-24", "seoul-music"])
+  const [favoriteCountries, setFavoriteCountries] = useStored<string[]>("gi_fav_countries", [])
+  const [recent, setRecent] = useStored<string[]>("gi_recent", [])
   const [settings, setSettings] = useStored<Settings>("gi_settings", defaultSettings)
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.toggle("reduce-motion", settings.reduceMotion)
+    root.classList.toggle("high-contrast", settings.highContrast)
+  }, [settings.highContrast, settings.reduceMotion])
 
   const toggleFavorite = useCallback(
     (slug: string) => setFavorites((p) => (p.includes(slug) ? p.filter((s) => s !== slug) : [...p, slug])),

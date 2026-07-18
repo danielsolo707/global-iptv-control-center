@@ -79,15 +79,40 @@
   color-scheme: dark;
 }
 
+.high-contrast {
+  --background: oklch(0.08 0 0);
+  --foreground: oklch(1 0 0);
+  --card: oklch(0.15 0 0);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.12 0 0);
+  --popover-foreground: oklch(1 0 0);
+  --secondary: oklch(0.24 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.2 0 0);
+  --muted-foreground: oklch(0.8 0 0);
+  --border: oklch(0.8 0 0 / 60%);
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
 @layer base {
   * {
     @apply border-border;
   }
   html {
     scroll-behavior: smooth;
+    overflow-x: clip;
   }
   body {
     @apply bg-background text-foreground;
+    overflow-x: clip;
   }
 }
 
@@ -171,4 +196,14 @@
 }
 .animate-spin-slow {
   animation: spin-slow 40s linear infinite;
+}
+
+.watch-player-frame {
+  max-height: calc(100dvh - 11.5rem);
+}
+
+@media (max-width: 639px) {
+  .watch-player-frame {
+    max-height: calc(100dvh - 10rem);
+  }
 }

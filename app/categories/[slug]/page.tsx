@@ -1,12 +1,22 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ChannelCard } from "@/components/cards"
+import { ChannelPagination } from "@/components/channel-pagination"
 import { SectionHeader, Badge } from "@/components/ui/primitives"
 import { getCategory, channelsByCategory, getCountries } from "@/lib/api-client"
 import { ArrowLeft, LayoutGrid } from "lucide-react"
 
-export default async function CategoryDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+const PAGE_SIZE = 48
+
+export default async function CategoryDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ page?: string }>
+}) {
   const { slug } = await params
+  const { page } = await searchParams
   const category = await getCategory(slug)
   if (!category) notFound()
 
@@ -16,6 +26,10 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
   ])
 
   const countryMap = new Map(countries.map((c) => [c.slug, c]))
+  const totalPages = Math.max(1, Math.ceil(channels.length / PAGE_SIZE))
+  const requestedPage = Number.parseInt(page || "1", 10)
+  const currentPage = Number.isFinite(requestedPage) ? Math.min(Math.max(requestedPage, 1), totalPages) : 1
+  const pageChannels = channels.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-8">
@@ -55,12 +69,19 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
           <p className="text-muted-foreground">No channels available in this category.</p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {channels.map((channel) => (
+            {pageChannels.map((channel) => (
               <ChannelCard key={channel.slug} channel={channel} country={countryMap.get(channel.countrySlug)} />
             ))}
           </div>
         )}
       </section>
+
+      <ChannelPagination
+        basePath={`/categories/${category.slug}`}
+        totalItems={channels.length}
+        currentPage={currentPage}
+        pageSize={PAGE_SIZE}
+      />
     </div>
   )
 }

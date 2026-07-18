@@ -1,41 +1,43 @@
-"use client"
-
-import { useState } from "react"
+import Image from "next/image"
 import Link from "next/link"
-import { Globe } from "@/components/globe/globe"
 import { PillButton, LiveDot } from "@/components/ui/primitives"
 import { StatCard } from "@/components/cards"
-import { Globe as GlobeIcon, Play, Tv, Wifi } from "lucide-react"
-import type { IptvCountry, IptvStats } from "@/lib/types"
+import { Map, MapPin, Play, Tv, Wifi } from "lucide-react"
+import type { IptvStats } from "@/lib/types"
 
-export function Hero({ stats, countries }: { stats: IptvStats; countries: IptvCountry[] }) {
-  const [hovered, setHovered] = useState<IptvCountry | null>(null)
-
+export function Hero({ stats }: { stats: IptvStats }) {
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-border/60 bg-card/30">
-      {/* ambient glows */}
-      <div className="pointer-events-none absolute -left-20 top-0 size-72 rounded-full bg-blue/20 blur-3xl" />
-      <div className="pointer-events-none absolute -right-10 bottom-0 size-80 rounded-full bg-purple/20 blur-3xl" />
+    <section className="relative isolate min-h-[550px] overflow-hidden rounded-3xl border border-border/60 bg-[#020714] shadow-2xl shadow-blue/10">
+      <Image
+        src="/images/hero-earth-v1.png"
+        alt=""
+        fill
+        priority
+        sizes="(max-width: 1024px) 100vw, 1400px"
+        className="pointer-events-none object-cover object-[61%_center] sm:object-center"
+      />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(2,7,20,0.98)_0%,rgba(2,7,20,0.93)_32%,rgba(2,7,20,0.63)_55%,rgba(2,7,20,0.13)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(0deg,rgba(2,7,20,0.78)_0%,transparent_45%)]" />
+      <div className="pointer-events-none absolute -left-20 top-0 size-72 rounded-full bg-blue/15 blur-3xl" />
 
-      <div className="relative grid items-center gap-6 p-6 md:p-10 lg:grid-cols-2">
-        {/* Left */}
+      <div className="relative z-10 flex min-h-[550px] items-center p-6 md:p-10 lg:p-12">
         <div className="max-w-xl">
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
             <LiveDot label={`${stats.channels.toLocaleString()} LIVE CHANNELS`} />
           </span>
 
           <h1 className="font-heading mt-5 text-balance text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl xl:text-6xl">
-            Explore <span className="text-gradient">Live TV</span>
+            Watch <span className="text-gradient">Live TV</span>
             <br /> from around the world
           </h1>
 
           <p className="mt-4 max-w-md text-pretty leading-relaxed text-muted-foreground">
-            Watch thousands of free live TV channels from {stats.countries} countries in HD & 4K quality.
+            Browse thousands of free live TV channels from {stats.countries} countries in one global directory.
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-4">
-            <PillButton href="/explore">
-              <GlobeIcon className="size-4" /> Explore Countries
+            <PillButton href="/countries">
+              <Map className="size-4" /> Browse Countries
             </PillButton>
             <Link href="/about" className="group flex items-center gap-3 text-sm font-semibold">
               <span className="grid size-11 place-items-center rounded-full border border-border bg-card/60 transition-colors group-hover:bg-secondary">
@@ -50,53 +52,10 @@ export function Hero({ stats, countries }: { stats: IptvStats; countries: IptvCo
 
           <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard icon={<Tv className="size-4" />} value={stats.channels.toLocaleString()} label="Channels" color="oklch(0.62 0.19 265)" />
-            <StatCard icon={<GlobeIcon className="size-4" />} value={`${stats.countries}`} label="Countries" color="oklch(0.65 0.19 255)" />
-            <StatCard icon={<span className="text-[10px] font-bold">HD</span>} value={`${stats.hd}`} label="HD Channels" color="oklch(0.72 0.19 145)" />
+            <StatCard icon={<MapPin className="size-4" />} value={`${stats.countries}`} label="Countries" color="oklch(0.65 0.19 255)" />
+            <StatCard icon={<Tv className="size-4" />} value="Free" label="Access" color="oklch(0.72 0.19 145)" />
             <StatCard icon={<Wifi className="size-4" />} value="Online" label="Status" color="oklch(0.72 0.19 145)" />
           </div>
-        </div>
-
-        {/* Right — globe */}
-        <div className="relative aspect-square w-full">
-          <div className="absolute inset-0">
-            <Globe interactive autoRotate countries={countries} onHover={setHovered} />
-          </div>
-
-          {/* Floating info card */}
-          <div
-            className="pointer-events-none absolute right-2 top-6 w-56 rounded-2xl border border-white/10 bg-black/70 p-4 backdrop-blur-xl transition-opacity duration-300 md:right-6"
-            style={{ opacity: hovered ? 1 : 0 }}
-          >
-            {hovered && (
-              <>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{hovered.flag}</span>
-                    <div>
-                      <p className="text-sm font-bold text-white">{hovered.name}</p>
-                      <p className="text-xs text-white/60">{hovered.channels.toLocaleString()} Channels</p>
-                    </div>
-                  </div>
-                  <span className="grid size-8 place-items-center rounded-full bg-gradient-brand">
-                    <GlobeIcon className="size-4 text-white" />
-                  </span>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {hovered.languages.slice(0, 3).map((t) => (
-                    <span key={t} className="rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/80">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-3 flex items-center gap-1.5 text-xs text-white/70">
-                  <span className="size-1.5 rounded-full bg-emerald-400" /> Live Now: {hovered.liveNow}
-                </p>
-              </>
-            )}
-          </div>
-          <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-center text-xs text-muted-foreground">
-            Hover a marker to preview · Drag to rotate
-          </p>
         </div>
       </div>
     </section>

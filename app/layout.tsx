@@ -5,6 +5,10 @@ import { AppShell } from "@/components/app-shell"
 import { AppProvider } from "@/components/app-provider"
 import "./globals.css"
 
+// Channel metadata is refreshed at runtime from the live IPTV source.
+// Making this explicit prevents build-time attempts to pre-render stale data.
+export const dynamic = "force-dynamic"
+
 const manrope = Manrope({
   subsets: ["latin"],
   variable: "--font-manrope",
@@ -20,7 +24,7 @@ const geist = Geist({
 export const metadata: Metadata = {
   title: "Global IPTV — Explore Live TV From Around the World",
   description:
-    "Watch thousands of free live TV channels from 134 countries in HD & 4K quality. Explore live television across the globe.",
+    "Browse thousands of free live TV channels from around the world in one global directory.",
   generator: "v0.app",
 }
 
