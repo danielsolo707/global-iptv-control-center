@@ -31,19 +31,30 @@ def parse_m3u(document: str, metadata: dict[str, dict]) -> list[dict]:
             channel_id = pending["attrs"].get("tvg-id", "")
             base_id = re.sub(r"@[A-Za-z0-9]+$", "", channel_id)
             source = metadata.get(channel_id) or metadata.get(base_id) or {}
-            countries = source.get("country") or []
-            raw_country = countries[0] if isinstance(countries, list) else countries
+            raw_countries = source.get("country")
+            if isinstance(raw_countries, list):
+                raw_country = raw_countries[0] if raw_countries else None
+            else:
+                raw_country = raw_countries
             country_code = (raw_country or "").upper() if raw_country else None
             if channel_id and country_code:
-                categories = source.get("categories") or ["general"]
-                languages = source.get("languages") or [None]
+                categories = source.get("categories")
+                if isinstance(categories, list):
+                    category = categories[0] if categories else "general"
+                else:
+                    category = categories or "general"
+                languages = source.get("languages")
+                if isinstance(languages, list):
+                    language = languages[0] if languages else None
+                else:
+                    language = languages
                 entries.append(
                     {
                         "channel_id": channel_id,
                         "name": source.get("name") or pending["name"],
                         "country_code": country_code,
-                        "category": (categories[0] if isinstance(categories, list) else categories) or "general",
-                        "language": (languages[0] if isinstance(languages, list) else languages),
+                        "category": category or "general",
+                        "language": language,
                         "logo": pending["attrs"].get("tvg-logo") or source.get("logo"),
                         "stream_url": line,
                     }
