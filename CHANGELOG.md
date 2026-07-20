@@ -67,8 +67,19 @@ Several independent defects stacked:
 
 ## Migration steps for existing deployments
 
-1. Apply migrations in order: `001_admin_dashboard.sql`, `002_iptv_catalog.sql`, **`003_catalog_hardening.sql`**.
-2. Confirm repository secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
-3. Optionally set `FFPROBE_PATH` for codec validation (local + Actions already set when ffmpeg is present).
-4. Run a catalog sync (`pnpm` script, admin Start Sync, or `workflow_dispatch` on Daily IPTV sync).
-5. Run the stream checker (`workflow_dispatch` on Stream checker) so channels progress from `checking` → `online`.
+1. Apply migrations in order: `001_admin_dashboard.sql`, `002_iptv_catalog.sql`, **`003_catalog_hardening.sql`**, **`004_restore_public_grants.sql`**.
+2. Confirm repository secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (must be the real **service_role** JWT from Supabase → Settings → API, not the anon key).
+3. Confirm Vercel env vars for Production: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`.
+4. Optionally set `FFPROBE_PATH` for codec validation (local + Actions already set when ffmpeg is present).
+5. Run a catalog sync (`pnpm` script, admin Start Sync, or `workflow_dispatch` on Daily IPTV sync).
+6. Run the stream checker (`workflow_dispatch` on Stream checker) so channels progress from `checking` → `online`.
+
+## Production verification note (2026-07-20)
+
+Live site `https://global-iptv-control-center.vercel.app` and GitHub Actions (`Daily IPTV sync`, `Stream checker`) were failing with:
+
+```text
+permission denied for schema public  (Postgres 42501)
+```
+
+Cause: schema-level grants missing for Supabase API roles after DB setup. Fix: run `004_restore_public_grants.sql`, then re-run Actions and hard-refresh the site.

@@ -83,6 +83,7 @@ Open [http://localhost:3000](http://localhost:3000) for the viewer application a
    - [`001_admin_dashboard.sql`](supabase/migrations/001_admin_dashboard.sql) — admin roles, audit tables, RLS
    - [`002_iptv_catalog.sql`](supabase/migrations/002_iptv_catalog.sql) — persistent channel catalog, online-only public reads, seed countries (US, GB, DE, FR, IR, TR)
    - [`003_catalog_hardening.sql`](supabase/migrations/003_catalog_hardening.sql) — UK→GB normalization, atomic stream-check RPC, improved country availability report
+   - [`004_restore_public_grants.sql`](supabase/migrations/004_restore_public_grants.sql) — restore schema grants if you hit `permission denied for schema public`
 3. Create the first administrator in Supabase Authentication.
 4. Copy that user's UUID and bootstrap the role in the SQL editor:
 

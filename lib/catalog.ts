@@ -49,7 +49,28 @@ export async function getOnlineChannels(filters: ChannelFilters = {}): Promise<C
     .select("code")
     .eq("enabled", true)
     .gte("total_channels", MINIMUM_CHANNELS_PER_COUNTRY)
-  if (countryError) throw new Error(`Country visibility query failed: ${countryError.message}`)
+  if (countryError) {
+    if (/permission denied|schema cache|does not exist|JWT|Invalid API key/i.test(countryError.message)) {
+      const { channels } = await fetchIptvData()
+      return channels
+        .filter((channel) => !filters.country || channel.countrySlug === filters.country.toLowerCase())
+        .filter((channel) => !filters.category || channel.categorySlug === filters.category.toLowerCase())
+        .filter((channel) => !filters.language || channel.language.toLowerCase() === filters.language.toLowerCase())
+        .map((channel) => ({
+          id: channel.slug,
+          channelId: channel.slug,
+          name: channel.name,
+          country: channel.countryName,
+          countryCode: channel.countrySlug.toUpperCase(),
+          category: channel.categorySlug,
+          language: channel.language,
+          logo: null,
+          url: channel.streamUrl || channel.streams[0]?.url || "",
+          responseTime: null,
+        }))
+    }
+    throw new Error(`Country visibility query failed: ${countryError.message}`)
+  }
 
   const visibleCodes = (visibleCountries || []).map((country) => country.code)
   const filterCountry = filters.country ? normalizeCountryCode(filters.country) || filters.country.toUpperCase() : null

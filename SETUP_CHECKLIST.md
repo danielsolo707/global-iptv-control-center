@@ -33,12 +33,18 @@ In the Supabase SQL editor (or CLI), run **in order**:
 1. `supabase/migrations/001_admin_dashboard.sql`
 2. `supabase/migrations/002_iptv_catalog.sql`
 3. `supabase/migrations/003_catalog_hardening.sql`  ← required for this upgrade
+4. `supabase/migrations/004_restore_public_grants.sql`  ← **required if you see `permission denied for schema public`**
 
 Migration 003:
 
 - Converts legacy `UK` → `GB`
 - Adds atomic `apply_stream_check_result` RPC
 - Improves `country_availability_report`
+
+Migration 004:
+
+- Restores `USAGE` / table / function grants for `anon`, `authenticated`, and `service_role`
+- Fixes live site 500s and GitHub Actions worker failures caused by schema privilege errors
 
 ## 3) Create the first admin user
 

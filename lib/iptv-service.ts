@@ -406,8 +406,18 @@ async function loadSupabaseCatalog(): Promise<IptvData | null> {
     db.from("country_availability_report").select("code,total_channels").eq("enabled", true).gte("total_channels", MINIMUM_CHANNELS_PER_COUNTRY),
     db.from("category_settings").select("category_id,enabled"),
   ])
-  if (countryError || reportError) throw new Error(countryError?.message || reportError?.message || "Supabase catalog query failed")
+  // If schema/RLS/grants are misconfigured, fall back to the public iptv-org feed
+  // instead of hard-crashing every viewer page.
+  if (countryError || reportError) {
+    const message = countryError?.message || reportError?.message || "Supabase catalog query failed"
+    if (/permission denied|schema cache|does not exist|JWT|Invalid API key/i.test(message)) {
+      console.warn(`Supabase catalog unavailable (${message}); falling back to upstream feed.`)
+      return null
+    }
+    throw new Error(message)
+  }
   const visibleCountryCodes = new Set((countryReport || []).map((country) => country.code))
+  // Configured DB with zero visible countries is a real empty catalog — not a config error.
   if (!visibleCountryCodes.size) {
     return { channels: [], countries: [], categories: [], stats: { channels: 0, countries: 0, hd: 0, uhd: 0 } }
   }
