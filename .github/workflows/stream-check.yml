@@ -13,12 +13,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: pip install -r workers/requirements.txt
-      - run: python workers/check_streams.py
+      # Fast HTTP pass: each working stream is written to Supabase immediately
+      # so the public site can show online channels before the job finishes.
+      # FFprobe is intentionally off here — enable FFPROBE_PATH only if you
+      # want a slower codec-level second pass.
+      - name: Progressive HTTP stream check
+        run: python workers/check_streams.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          STREAM_CHECK_CONCURRENCY: "20"
-          # Optional FFprobe validation (ffmpeg is installed above).
-          FFPROBE_PATH: ffprobe
+          STREAM_CHECK_CONCURRENCY: "50"
+          STREAM_TIMEOUT_SECONDS: "8"
+          STREAM_CHECK_PROGRESS_EVERY: "25"
+          STREAM_CHECK_ONLINE_LOG_EVERY: "5"

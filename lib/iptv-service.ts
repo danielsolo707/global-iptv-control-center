@@ -8,7 +8,7 @@ import { createClient } from "@supabase/supabase-js"
  */
 
 const IPTV_BASE = "https://iptv-org.github.io/api"
-const CACHE_TTL_MS = 2 * 60 * 1000 // Keep provider additions and removals in sync quickly.
+const CACHE_TTL_MS = 30 * 1000 // Short TTL so progressive stream-check online updates appear quickly.
 const SEARCH_RESULT_LIMIT = 100
 const UNAVAILABLE_CHANNEL_TTL_MS = 10 * 60 * 1000
 const MINIMUM_CHANNELS_PER_COUNTRY = 10
