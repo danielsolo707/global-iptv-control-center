@@ -28,16 +28,15 @@ let inFlightRequest: Promise<IptvData> | null = null
 const reportedUnavailableChannels = new Map<string, number>()
 
 // Popular country codes (countries with significant free-to-air presence)
+// Top catalog countries (fallback path when Supabase is not configured).
+// Kept in sync with the top-84 stream-backed country set used in production.
 const POPULAR_COUNTRY_CODES = new Set([
-  "US", "GB", "UK", "JP", "KR", "FR", "DE", "IN", "BR", "ES", "IT",
-  "RU", "CN", "MX", "CA", "AU", "NL", "TR", "ID", "SA", "AE",
-  "IR", "TH", "VN", "PL", "SE", "NO", "DK", "FI", "BE", "CH",
-  "AT", "PT", "GR", "IL", "ZA", "EG", "PK", "BD", "MY", "PH",
-  "UA", "CZ", "HU", "RO", "BG", "HR", "SI", "SK", "LT", "LV",
-  "EE", "IS", "IE", "NZ", "SG", "HK", "TW", "AR", "CO", "CL",
-  "PE", "VE", "EC", "UY", "PY", "BO", "CR", "PA", "GT", "HN",
-  "SV", "NI", "DO", "CU", "PR", "JM", "TT", "BB", "BS", "BZ",
-  "GW", "GN", "DJ", "KM", "MR", "NE", "TD", "CF", "SS", "ER",
+  "US", "IN", "DE", "RU", "BR", "ES", "IT", "DO", "CL", "TR", "FR", "SE", "GB", "UK",
+  "CA", "NL", "PE", "AR", "MX", "ID", "CN", "IR", "UA", "CO", "HU", "PL", "GR", "PK",
+  "EC", "BO", "RO", "HN", "KR", "PY", "VE", "CR", "TH", "RS", "BG", "GT", "PT", "SA",
+  "IQ", "CZ", "VN", "NG", "BD", "SK", "AE", "AU", "KE", "BE", "MN", "SV", "KZ", "CH",
+  "UZ", "AT", "HR", "LB", "BA", "IL", "KH", "CY", "PR", "MK", "LK", "QA", "TW", "FI",
+  "ZA", "PA", "JO", "AZ", "CD", "PH", "AL", "SI", "MD", "SN", "UG", "CI", "MY", "CM", "NI",
 ])
 
 // Category mapping from iptv-org to our categories
@@ -84,24 +83,33 @@ function getFlagEmoji(countryCode: string): string {
 // Region mapping
 function getRegion(countryCode: string): string {
   const regionMap: Record<string, string> = {
+    // Americas
     US: "Americas", CA: "Americas", MX: "Americas", BR: "Americas", AR: "Americas",
     CO: "Americas", CL: "Americas", PE: "Americas", VE: "Americas", EC: "Americas",
     UY: "Americas", PY: "Americas", BO: "Americas", CR: "Americas", PA: "Americas",
     GT: "Americas", HN: "Americas", SV: "Americas", NI: "Americas", DO: "Americas",
     CU: "Americas", PR: "Americas", JM: "Americas", TT: "Americas", BB: "Americas",
     BS: "Americas", BZ: "Americas",
+    // Europe
     GB: "Europe", UK: "Europe", FR: "Europe", DE: "Europe", IT: "Europe", ES: "Europe",
     NL: "Europe", BE: "Europe", CH: "Europe", AT: "Europe", PT: "Europe",
     GR: "Europe", SE: "Europe", NO: "Europe", DK: "Europe", FI: "Europe",
     IE: "Europe", IS: "Europe", PL: "Europe", CZ: "Europe", HU: "Europe",
     RO: "Europe", BG: "Europe", HR: "Europe", SI: "Europe", SK: "Europe",
     LT: "Europe", LV: "Europe", EE: "Europe", UA: "Europe", RU: "Europe",
-    TR: "Europe",
+    TR: "Europe", RS: "Europe", BA: "Europe", MK: "Europe", AL: "Europe",
+    MD: "Europe", CY: "Europe",
+    // Asia / Middle East
     JP: "Asia", KR: "Asia", CN: "Asia", IN: "Asia", ID: "Asia",
     TH: "Asia", VN: "Asia", MY: "Asia", PH: "Asia", PK: "Asia",
     BD: "Asia", IR: "Asia", SA: "Asia", AE: "Asia", IL: "Asia",
-    SG: "Asia", HK: "Asia", TW: "Asia",
+    SG: "Asia", HK: "Asia", TW: "Asia", IQ: "Asia", LB: "Asia",
+    JO: "Asia", QA: "Asia", KZ: "Asia", UZ: "Asia", MN: "Asia",
+    KH: "Asia", LK: "Asia", AZ: "Asia",
+    // Africa
     ZA: "Africa", EG: "Africa", NG: "Africa", KE: "Africa", GH: "Africa",
+    SN: "Africa", UG: "Africa", CI: "Africa", CM: "Africa", CD: "Africa",
+    // Oceania
     AU: "Oceania", NZ: "Oceania",
   }
   return regionMap[countryCode.toUpperCase()] || "Other"

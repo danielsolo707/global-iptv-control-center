@@ -10,6 +10,7 @@ import httpx
 from common import (
     chunks,
     log_system,
+    normalize_category,
     resolve_stored_country_code,
     supabase_client,
 )
@@ -40,20 +41,23 @@ def parse_m3u(document: str, metadata: dict[str, dict]) -> list[dict]:
             if channel_id and country_code:
                 categories = source.get("categories")
                 if isinstance(categories, list):
-                    category = categories[0] if categories else "general"
+                    raw_category = categories[0] if categories else "general"
                 else:
-                    category = categories or "general"
+                    raw_category = categories or "general"
                 languages = source.get("languages")
                 if isinstance(languages, list):
                     language = languages[0] if languages else None
                 else:
                     language = languages
+                # Prefer ISO language name/code string; keep first token only.
+                if isinstance(language, str):
+                    language = language.strip() or None
                 entries.append(
                     {
                         "channel_id": channel_id,
                         "name": source.get("name") or pending["name"],
                         "country_code": country_code,
-                        "category": category or "general",
+                        "category": normalize_category(str(raw_category) if raw_category is not None else None),
                         "language": language,
                         "logo": pending["attrs"].get("tvg-logo") or source.get("logo"),
                         "stream_url": line,

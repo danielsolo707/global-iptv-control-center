@@ -29,6 +29,56 @@ def normalize_country_code(code: str | None) -> str | None:
     return "GB" if upper == "UK" else upper
 
 
+# Map iptv-org category keys onto the public app category slugs.
+CATEGORY_SLUGS: dict[str, str] = {
+    "sports": "sports",
+    "news": "news",
+    "movies": "movies",
+    "kids": "kids",
+    "music": "music",
+    "documentary": "documentary",
+    "entertainment": "entertainment",
+    "religion": "religion",
+    "education": "education",
+    "business": "business",
+    "technology": "technology",
+    "general": "entertainment",
+    "culture": "documentary",
+    "science": "technology",
+    "lifestyle": "entertainment",
+    "travel": "documentary",
+    "comedy": "entertainment",
+    "drama": "movies",
+    "family": "kids",
+    "animation": "kids",
+    "classic": "movies",
+    "outdoor": "sports",
+    "shop": "business",
+    "shopping": "business",
+    "weather": "news",
+    "legislative": "news",
+    "auto": "sports",
+    "cooking": "lifestyle",
+    "series": "movies",
+    "relax": "entertainment",
+    "interactive": "entertainment",
+}
+
+
+def normalize_category(raw: str | None) -> str:
+    key = (raw or "general").strip().lower()
+    if not key:
+        key = "general"
+    # lifestyle is not a top-level public slug in the app; fold into entertainment.
+    slug = CATEGORY_SLUGS.get(key, key if key in {
+        "sports", "news", "movies", "kids", "music", "documentary",
+        "entertainment", "religion", "education", "business", "technology",
+    } else "entertainment")
+    if slug == "lifestyle":
+        return "entertainment"
+    return slug
+
+
 def resolve_stored_country_code(upstream_code: str, enabled: dict[str, str]) -> str | None:
     normalized = normalize_country_code(upstream_code)
     if not normalized:

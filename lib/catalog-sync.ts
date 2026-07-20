@@ -1,6 +1,7 @@
 import "server-only"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import { normalizeCountryCode, resolveStoredCountryCode } from "@/lib/country-codes"
+import { normalizeCategory } from "@/lib/category"
 import { refreshIptvData } from "@/lib/iptv-service"
 
 const M3U_URL = "https://iptv-org.github.io/iptv/index.m3u"
@@ -51,11 +52,12 @@ function parseM3u(document: string, metadata: Map<string, Record<string, unknown
     if (channelId && countryCode) {
       const categories = source.categories
       const languages = source.languages
+      const rawCategory = Array.isArray(categories) ? String(categories[0] || "general") : String(categories || "general")
       rows.push({
         channel_id: channelId,
         name: (typeof source.name === "string" && source.name) || pending.name,
         country_code: countryCode,
-        category: (Array.isArray(categories) ? String(categories[0] || "general") : String(categories || "general")) || "general",
+        category: normalizeCategory(rawCategory),
         language: Array.isArray(languages) ? (languages[0] ? String(languages[0]) : null) : languages ? String(languages) : null,
         logo: pending.attrs["tvg-logo"] || (typeof source.logo === "string" ? source.logo : null),
         stream_url: line,
