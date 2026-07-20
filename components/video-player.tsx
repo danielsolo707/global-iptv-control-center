@@ -74,8 +74,17 @@ export function VideoPlayer({ sources, poster, className, autoPlay = true, onAll
     }
 
     let hls: Hls | null = null
+    const canUseNativeHls = Boolean(video.canPlayType("application/vnd.apple.mpegurl"))
+
     if (isHlsStream(activeSource.url) && Hls.isSupported()) {
-      hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 })
+      hls = new Hls({
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        enableWorker: true,
+        // Recover transient network/media errors before advancing sources.
+        fragLoadingMaxRetry: 3,
+        manifestLoadingMaxRetry: 2,
+      })
       hls.loadSource(activeSource.url)
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -83,8 +92,25 @@ export function VideoPlayer({ sources, poster, className, autoPlay = true, onAll
         startPlayback()
       })
       hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) handleSourceFailure()
+        if (!data.fatal) return
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls?.startLoad()
+          return
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls?.recoverMediaError()
+          return
+        }
+        handleSourceFailure()
       })
+    } else if (isHlsStream(activeSource.url) && canUseNativeHls) {
+      // Safari / iOS: native HLS
+      video.src = activeSource.url
+      video.onloadeddata = () => {
+        setLoading(false)
+        startPlayback()
+      }
+      video.onerror = handleSourceFailure
     } else {
       video.src = activeSource.url
       video.onloadeddata = () => {

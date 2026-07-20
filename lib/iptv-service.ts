@@ -29,7 +29,7 @@ const reportedUnavailableChannels = new Map<string, number>()
 
 // Popular country codes (countries with significant free-to-air presence)
 const POPULAR_COUNTRY_CODES = new Set([
-  "US", "UK", "JP", "KR", "FR", "DE", "IN", "BR", "ES", "IT",
+  "US", "GB", "UK", "JP", "KR", "FR", "DE", "IN", "BR", "ES", "IT",
   "RU", "CN", "MX", "CA", "AU", "NL", "TR", "ID", "SA", "AE",
   "IR", "TH", "VN", "PL", "SE", "NO", "DK", "FI", "BE", "CH",
   "AT", "PT", "GR", "IL", "ZA", "EG", "PK", "BD", "MY", "PH",
@@ -119,6 +119,7 @@ const logoColors = [
 const COUNTRY_IMAGES: Record<string, string> = {
   US: "/countries/usa.png",
   UK: "/countries/uk.png",
+  GB: "/countries/uk.png",
   IN: "/countries/india.png",
   DE: "/countries/germany.png",
   FR: "/countries/france.png",
@@ -132,7 +133,8 @@ const COUNTRY_IMAGES: Record<string, string> = {
 }
 
 function countryImageFor(code: string): string {
-  return COUNTRY_IMAGES[code.toUpperCase()] || ""
+  const upper = code.toUpperCase() === "UK" ? "GB" : code.toUpperCase()
+  return COUNTRY_IMAGES[upper] || COUNTRY_IMAGES[code.toUpperCase()] || ""
 }
 
 function qualityValue(quality?: string): number {
@@ -190,12 +192,17 @@ export async function fetchIptvData(): Promise<IptvData> {
   return inFlightRequest
 }
 
+function remember(data: IptvData): IptvData {
+  cache = { ...data, lastUpdate: Date.now() }
+  return data
+}
+
 async function loadIptvData(): Promise<IptvData> {
   try {
     const databaseData = await loadSupabaseCatalog()
-    if (databaseData) return databaseData
+    if (databaseData) return remember(databaseData)
 
-    // Fetch all IPTV data in parallel
+    // Fallback: live iptv-org APIs when Supabase is not configured.
     const [channelsRes, streamsRes, countriesRes] = await Promise.all([
       fetch(`${IPTV_BASE}/channels.json`, { cache: "no-store", signal: AbortSignal.timeout(30_000) }),
       fetch(`${IPTV_BASE}/streams.json`, { cache: "no-store", signal: AbortSignal.timeout(30_000) }),
@@ -240,6 +247,10 @@ async function loadIptvData(): Promise<IptvData> {
         })
       }
     }
+    // Accept both GB (ISO) and legacy UK lookups.
+    if (countryMetaMap.has("GB") && !countryMetaMap.has("UK")) {
+      countryMetaMap.set("UK", countryMetaMap.get("GB")!)
+    }
 
     // Process channels - filter to popular countries only
     const processedChannels: IptvChannel[] = []
@@ -247,8 +258,11 @@ async function loadIptvData(): Promise<IptvData> {
 
     for (let i = 0; i < channelsData.length; i++) {
       const ch = channelsData[i]
-      const countryCode = ch.country && Array.isArray(ch.country) ? ch.country[0] : ch.country
-      if (!countryCode || !POPULAR_COUNTRY_CODES.has(countryCode.toUpperCase())) continue
+      const rawCountry = ch.country && Array.isArray(ch.country) ? ch.country[0] : ch.country
+      if (!rawCountry) continue
+      // Normalize UK → GB (ISO 3166-1 / iptv-org).
+      const code = String(rawCountry).toUpperCase() === "UK" ? "GB" : String(rawCountry).toUpperCase()
+      if (!POPULAR_COUNTRY_CODES.has(code)) continue
 
       const categoryKey = ch.categories && Array.isArray(ch.categories) && ch.categories.length > 0
         ? ch.categories[0].toLowerCase()
@@ -263,11 +277,11 @@ async function loadIptvData(): Promise<IptvData> {
         : ch.id
 
       // Ensure unique slugs by appending country code and counter if needed
-      let slug = `${baseSlug}-${countryCode.toLowerCase()}`
+      let slug = `${baseSlug}-${code.toLowerCase()}`
       let counter = 1
       while (existingSlugs.has(slug)) {
         counter++
-        slug = `${baseSlug}-${countryCode.toLowerCase()}-${counter}`
+        slug = `${baseSlug}-${code.toLowerCase()}-${counter}`
       }
       existingSlugs.add(slug)
 
@@ -277,15 +291,15 @@ async function loadIptvData(): Promise<IptvData> {
         slug: slug || `ch-${i}`,
         name: ch.name || "Unknown Channel",
         logoColor: logoColors[i % logoColors.length],
-        countrySlug: countryCode.toLowerCase(),
-        countryName: countryMetaMap.get(countryCode)?.name || "Country not listed",
+        countrySlug: code.toLowerCase(),
+        countryName: countryMetaMap.get(code)?.name || "Country not listed",
         categorySlug: catMap.slug,
         language: ch.languages && Array.isArray(ch.languages) && ch.languages.length > 0
           ? ch.languages[0]
           : "English",
         quality,
         image: catMap.image,
-        description: `${ch.name || "Channel"} broadcasts live ${catMap.name.toLowerCase()} programming from ${countryMetaMap.get(countryCode)?.name || "its country of origin"}.`,
+        description: `${ch.name || "Channel"} broadcasts live ${catMap.name.toLowerCase()} programming from ${countryMetaMap.get(code)?.name || "its country of origin"}.`,
         streamUrl: streams[0].url,
         streams,
       }
@@ -363,16 +377,7 @@ async function loadIptvData(): Promise<IptvData> {
       uhd: visibleChannels.filter((c) => c.quality === "4K").length,
     }
 
-    // Update cache
-    cache = {
-      channels: visibleChannels,
-      countries: processedCountries,
-      categories: processedCategories,
-      stats,
-      lastUpdate: Date.now(),
-    }
-
-    return { channels: visibleChannels, countries: processedCountries, categories: processedCategories, stats }
+    return remember({ channels: visibleChannels, countries: processedCountries, categories: processedCategories, stats })
   } catch (error) {
     console.error("IPTV data fetch error:", error)
     // Return cached data if available, otherwise throw
@@ -396,12 +401,21 @@ async function loadSupabaseCatalog(): Promise<IptvData | null> {
   if (!url || !key || url.includes("your-project") || key.includes("your-anon-key")) return null
 
   const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
-  const [{ data: countryRows, error: countryError }, { data: countryReport, error: reportError }] = await Promise.all([
+  const [{ data: countryRows, error: countryError }, { data: countryReport, error: reportError }, { data: categorySettings }] = await Promise.all([
     db.from("countries").select("name,code").eq("enabled", true).order("name"),
     db.from("country_availability_report").select("code,total_channels").eq("enabled", true).gte("total_channels", MINIMUM_CHANNELS_PER_COUNTRY),
+    db.from("category_settings").select("category_id,enabled"),
   ])
   if (countryError || reportError) throw new Error(countryError?.message || reportError?.message || "Supabase catalog query failed")
   const visibleCountryCodes = new Set((countryReport || []).map((country) => country.code))
+  if (!visibleCountryCodes.size) {
+    return { channels: [], countries: [], categories: [], stats: { channels: 0, countries: 0, hd: 0, uhd: 0 } }
+  }
+
+  const disabledCategories = new Set(
+    (categorySettings || []).filter((row) => row.enabled === false).map((row) => String(row.category_id).toLowerCase()),
+  )
+
   const rows: Array<{ channel_id: string; name: string; country: string; country_code: string; category: string | null; language: string | null; logo: string | null; stream_url: string; response_time: number | null }> = []
   for (let start = 0; ; start += 1000) {
     const { data, error } = await db.from("channels")
@@ -413,27 +427,30 @@ async function loadSupabaseCatalog(): Promise<IptvData | null> {
   }
 
   const countriesByCode = new Map((countryRows || []).map((country) => [country.code, country.name]))
-  const channels: IptvChannel[] = rows.map((channel, index) => {
-    const category = CATEGORY_MAP[(channel.category || "").toLowerCase()] || DEFAULT_CATEGORY
-    const code = channel.country_code.toUpperCase()
-    return {
-      slug: channel.channel_id.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `channel-${index}`,
-      name: channel.name,
-      logoColor: logoColors[index % logoColors.length],
-      countrySlug: code.toLowerCase(),
-      countryName: channel.country || countriesByCode.get(code) || code,
-      categorySlug: category.slug,
-      language: channel.language || "Unknown",
-      quality: "Unknown",
-      image: category.image,
-      description: `${channel.name} broadcasts live ${category.name.toLowerCase()} programming from ${channel.country || countriesByCode.get(code) || code}.`,
-      streamUrl: channel.stream_url,
-      streams: [{ url: channel.stream_url }],
-    }
-  })
+  const channels: IptvChannel[] = rows
+    .filter((channel) => !disabledCategories.has((channel.category || "").toLowerCase()))
+    .filter((channel) => !isReportedUnavailable(channel.channel_id.toLowerCase().replace(/[^a-z0-9]+/g, "-")))
+    .map((channel, index) => {
+      const category = CATEGORY_MAP[(channel.category || "").toLowerCase()] || DEFAULT_CATEGORY
+      const code = channel.country_code.toUpperCase() === "UK" ? "GB" : channel.country_code.toUpperCase()
+      return {
+        slug: channel.channel_id.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `channel-${index}`,
+        name: channel.name,
+        logoColor: logoColors[index % logoColors.length],
+        countrySlug: code.toLowerCase(),
+        countryName: channel.country || countriesByCode.get(channel.country_code) || code,
+        categorySlug: category.slug,
+        language: channel.language || "Unknown",
+        quality: "Unknown" as const,
+        image: category.image,
+        description: `${channel.name} broadcasts live ${category.name.toLowerCase()} programming from ${channel.country || countriesByCode.get(channel.country_code) || code}.`,
+        streamUrl: channel.stream_url,
+        streams: [{ url: channel.stream_url }],
+      }
+    })
   const countries = (countryRows || []).filter((country) => visibleCountryCodes.has(country.code)).map((country) => {
-    const code = country.code.toUpperCase()
-    const countryChannels = channels.filter((channel) => channel.countrySlug === code.toLowerCase())
+    const code = country.code.toUpperCase() === "UK" ? "GB" : country.code.toUpperCase()
+    const countryChannels = channels.filter((channel) => channel.countrySlug === code.toLowerCase() || channel.countrySlug === country.code.toLowerCase())
     return { slug: code.toLowerCase(), name: country.name, flag: getFlagEmoji(code), code, region: getRegion(code), image: countryImageFor(code), channels: countryChannels.length, popularity: countryChannels.length, hd: 0, uhd: 0, languages: Array.from(new Set(countryChannels.map((channel) => channel.language))) }
   })
   const categoryCounts = new Map<string, number>()

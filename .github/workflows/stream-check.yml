@@ -20,3 +20,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           STREAM_CHECK_CONCURRENCY: "20"
+          # Optional FFprobe validation (ffmpeg is installed above).
+          FFPROBE_PATH: ffprobe

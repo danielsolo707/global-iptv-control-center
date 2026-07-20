@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { fetchIptvData, refreshIptvData, getLastUpdateTime } from "@/lib/iptv-service"
+import { fetchIptvData, getLastUpdateTime } from "@/lib/iptv-service"
 
 export async function GET() {
   try {
@@ -12,25 +12,10 @@ export async function GET() {
     console.error("API error:", error)
     return NextResponse.json(
       { error: "Failed to fetch IPTV data" },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
 
-export async function POST() {
-  try {
-    await refreshIptvData()
-    const data = await fetchIptvData()
-    return NextResponse.json({
-      ...data,
-      lastUpdate: getLastUpdateTime(),
-      refreshed: true,
-    })
-  } catch (error) {
-    console.error("Refresh error:", error)
-    return NextResponse.json(
-      { error: "Failed to refresh IPTV data" },
-      { status: 500 }
-    )
-  }
-}
+// Cache refresh is an admin-only operation (see /api/admin/action clear-cache / start-sync).
+// Public POST refresh was removed to prevent unauthenticated cache thrashing.

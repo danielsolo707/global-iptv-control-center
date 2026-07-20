@@ -11,6 +11,22 @@ if (!url || !key) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY ar
 const db = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 const attrPattern = /([\w-]+)="([^"]*)"/g
 
+function normalizeCountryCode(code) {
+  if (!code) return null
+  const upper = String(code).trim().toUpperCase()
+  if (!/^[A-Z]{2}$/.test(upper)) return null
+  return upper === "UK" ? "GB" : upper
+}
+
+function resolveStoredCountryCode(upstreamCode, countries) {
+  const normalized = normalizeCountryCode(upstreamCode)
+  if (!normalized) return null
+  if (countries.has(normalized)) return normalized
+  if (normalized === "GB" && countries.has("UK")) return "UK"
+  if (normalized === "UK" && countries.has("GB")) return "GB"
+  return null
+}
+
 function parseM3u(document, metadata) {
   const rows = []
   let pending = null
@@ -23,7 +39,7 @@ function parseM3u(document, metadata) {
       const channelId = pending.attrs["tvg-id"]
       const source = metadata.get(channelId) || metadata.get(channelId?.replace(/@[A-Za-z0-9]+$/, ""))
       const country = Array.isArray(source?.country) ? source.country[0] : source?.country
-      const countryCode = country?.toUpperCase()
+      const countryCode = normalizeCountryCode(country)
       if (channelId && countryCode) {
         rows.push({
           channel_id: channelId,
@@ -58,24 +74,72 @@ if (!m3uResponse.ok || !channelsResponse.ok) throw new Error("Unable to download
 const metadata = new Map((await channelsResponse.json()).filter((channel) => channel.id).map((channel) => [channel.id, channel]))
 const now = new Date().toISOString()
 const sourceRows = new Map()
+let imported = 0
+let restored = 0
+
 for (const row of parseM3u(await m3uResponse.text(), metadata)) {
-  const country = countries.get(row.country_code)
-  if (country) sourceRows.set(row.channel_id, { ...row, country, last_sync: now, status: "checking" })
+  const storedCode = resolveStoredCountryCode(row.country_code, countries)
+  if (!storedCode) continue
+  sourceRows.set(row.channel_id, {
+    ...row,
+    country_code: storedCode,
+    country: countries.get(storedCode),
+    last_sync: now,
+    status: "checking",
+  })
 }
 
-const existingResult = await db.from("channels").select("channel_id,stream_url").in("country_code", [...countries.keys()])
+const existingResult = await db
+  .from("channels")
+  .select("channel_id,stream_url,status,fail_count")
+  .in("country_code", [...countries.keys()])
 if (existingResult.error) throw existingResult.error
 const existing = new Map(existingResult.data.map((row) => [row.channel_id, row]))
+
 for (const [id, row] of sourceRows) {
-  if (existing.get(id)?.stream_url === row.stream_url) delete row.status
+  const old = existing.get(id)
+  if (!old) {
+    imported += 1
+    row.fail_count = 0
+    continue
+  }
+  const wasRemoved = old.status === "removed"
+  if (wasRemoved) restored += 1
+  if (old.stream_url === row.stream_url) {
+    // Never keep removed for channels present upstream.
+    if (wasRemoved) {
+      row.status = "checking"
+      row.fail_count = 0
+    } else {
+      delete row.status
+      if (old.fail_count != null) row.fail_count = old.fail_count
+    }
+  } else {
+    row.status = "checking"
+    row.fail_count = 0
+  }
 }
+
 for (const rows of batch([...sourceRows.values()])) {
   const { error } = await db.from("channels").upsert(rows, { onConflict: "channel_id", defaultToNull: false })
   if (error) throw error
 }
+
 const removed = [...existing.keys()].filter((id) => !sourceRows.has(id))
 for (const ids of batch(removed, 200)) {
   const { error } = await db.from("channels").update({ status: "removed", last_sync: now }).in("channel_id", ids)
   if (error) throw error
 }
-console.log(`Synced ${sourceRows.size} channels; marked ${removed.length} removed.`)
+
+await db.from("sync_runs").insert({
+  type: "script-sync",
+  status: "completed",
+  duration_ms: 0,
+  imported_channels: imported,
+  updated_channels: sourceRows.size - imported,
+  removed_channels: removed.length,
+})
+
+console.log(
+  `Synced ${sourceRows.size} channels; imported=${imported}, restored=${restored}, marked ${removed.length} removed.`,
+)

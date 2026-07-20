@@ -106,7 +106,8 @@ grant execute on function public.catalog_statistics() to anon, authenticated;
 -- controlled and can be toggled in Supabase or the admin interface.
 insert into public.countries (name, code, enabled) values
   ('United States', 'US', true),
-  ('United Kingdom', 'UK', true),
+  -- ISO 3166-1 uses GB; iptv-org publishes United Kingdom as GB (not UK).
+  ('United Kingdom', 'GB', true),
   ('Germany', 'DE', true),
   ('France', 'FR', true),
   ('Iran', 'IR', true),

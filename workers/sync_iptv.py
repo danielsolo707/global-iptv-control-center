@@ -1,12 +1,18 @@
 """Synchronize iptv-org's M3U directory into the enabled-country catalog."""
+from __future__ import annotations
+
 import asyncio
-import os
 import re
 from datetime import datetime, timezone
 
 import httpx
 
-from common import chunks, supabase_client
+from common import (
+    chunks,
+    log_system,
+    resolve_stored_country_code,
+    supabase_client,
+)
 
 M3U_URL = "https://iptv-org.github.io/iptv/index.m3u"
 CHANNELS_URL = "https://iptv-org.github.io/api/channels.json"
@@ -14,7 +20,8 @@ ATTR = re.compile(r'([\w-]+)="([^"]*)"')
 
 
 def parse_m3u(document: str, metadata: dict[str, dict]) -> list[dict]:
-    entries, pending = [], None
+    entries: list[dict] = []
+    pending = None
     for line in document.splitlines():
         line = line.strip()
         if line.startswith("#EXTINF:"):
@@ -22,66 +29,139 @@ def parse_m3u(document: str, metadata: dict[str, dict]) -> list[dict]:
             pending = {"attrs": attrs, "name": line.rsplit(",", 1)[-1].strip()}
         elif pending and line and not line.startswith("#"):
             channel_id = pending["attrs"].get("tvg-id", "")
-            source = metadata.get(channel_id) or metadata.get(re.sub(r"@[A-Za-z0-9]+$", "", channel_id)) or {}
+            base_id = re.sub(r"@[A-Za-z0-9]+$", "", channel_id)
+            source = metadata.get(channel_id) or metadata.get(base_id) or {}
             countries = source.get("country") or []
-            country_code = (countries[0] if isinstance(countries, list) else countries).upper() if countries else None
+            raw_country = countries[0] if isinstance(countries, list) else countries
+            country_code = (raw_country or "").upper() if raw_country else None
             if channel_id and country_code:
-                entries.append({
-                    "channel_id": channel_id,
-                    "name": source.get("name") or pending["name"],
-                    "country_code": country_code,
-                    "category": (source.get("categories") or ["general"])[0] if isinstance(source.get("categories"), list) else source.get("categories") or "general",
-                    "language": (source.get("languages") or [None])[0] if isinstance(source.get("languages"), list) else source.get("languages"),
-                    "logo": pending["attrs"].get("tvg-logo") or source.get("logo"),
-                    "stream_url": line,
-                })
+                categories = source.get("categories") or ["general"]
+                languages = source.get("languages") or [None]
+                entries.append(
+                    {
+                        "channel_id": channel_id,
+                        "name": source.get("name") or pending["name"],
+                        "country_code": country_code,
+                        "category": (categories[0] if isinstance(categories, list) else categories) or "general",
+                        "language": (languages[0] if isinstance(languages, list) else languages),
+                        "logo": pending["attrs"].get("tvg-logo") or source.get("logo"),
+                        "stream_url": line,
+                    }
+                )
             pending = None
     return entries
 
 
 async def main() -> None:
     db = supabase_client()
-    enabled = db.table("countries").select("code,name").eq("enabled", True).execute().data
+    started = datetime.now(timezone.utc)
+    enabled = db.table("countries").select("code,name").eq("enabled", True).execute().data or []
     countries = {item["code"]: item["name"] for item in enabled}
     if not countries:
         print("No enabled countries; nothing to synchronize.")
+        log_system(db, "Catalog sync skipped: no enabled countries", "sync", {"imported": 0})
         return
 
     async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
         m3u_response, metadata_response = await asyncio.gather(
-            client.get(M3U_URL), client.get(CHANNELS_URL)
+            client.get(M3U_URL),
+            client.get(CHANNELS_URL),
         )
         m3u_response.raise_for_status()
         metadata_response.raise_for_status()
+
     metadata = {channel["id"]: channel for channel in metadata_response.json() if channel.get("id")}
     source_rows = parse_m3u(m3u_response.text, metadata)
     now = datetime.now(timezone.utc).isoformat()
     rows_by_id: dict[str, dict] = {}
-    for row in source_rows:
-        if row["country_code"] in countries:
-            row["country"] = countries[row["country_code"]]
-            row["last_sync"] = now
-            row["status"] = "checking"
-            rows_by_id[row["channel_id"]] = row
 
-    existing = db.table("channels").select("channel_id,stream_url,status").in_("country_code", list(countries)).execute().data
-    existing_ids = {row["channel_id"] for row in existing}
-    # Do not turn a known healthy channel back to checking unless its stream URL changed.
+    for row in source_rows:
+        stored_code = resolve_stored_country_code(row["country_code"], countries)
+        if not stored_code:
+            continue
+        row = {
+            **row,
+            "country_code": stored_code,
+            "country": countries[stored_code],
+            "last_sync": now,
+            "status": "checking",
+        }
+        rows_by_id[row["channel_id"]] = row
+
+    existing = (
+        db.table("channels")
+        .select("channel_id,stream_url,status,fail_count")
+        .in_("country_code", list(countries))
+        .execute()
+        .data
+        or []
+    )
     existing_by_id = {row["channel_id"]: row for row in existing}
+    existing_ids = set(existing_by_id)
+    imported = updated = restored = 0
+
     for channel_id, row in rows_by_id.items():
         old = existing_by_id.get(channel_id)
-        if old and old["stream_url"] == row["stream_url"]:
-            row["status"] = old.get("status") or "checking"
-        elif old:
+        if not old:
+            imported += 1
+            row["fail_count"] = 0
+            continue
+
+        updated += 1
+        was_removed = old.get("status") == "removed"
+        if was_removed:
+            restored += 1
+
+        if old.get("stream_url") == row["stream_url"]:
+            # Critical fix: never keep status=removed for channels present upstream.
+            if was_removed:
+                row["status"] = "checking"
+                row["fail_count"] = 0
+            else:
+                # Preserve health status + fail counter for unchanged stream URLs.
+                row["status"] = old.get("status") or "checking"
+                if "fail_count" in old and old["fail_count"] is not None:
+                    row["fail_count"] = old["fail_count"]
+        else:
+            # URL changed — force re-validation from a clean slate.
+            row["status"] = "checking"
             row["fail_count"] = 0
 
     for batch in chunks(list(rows_by_id.values())):
         db.table("channels").upsert(batch, on_conflict="channel_id").execute()
 
     missing_ids = list(existing_ids - set(rows_by_id))
-    for start in range(0, len(missing_ids), 200):
-        db.table("channels").update({"status": "removed", "last_sync": now}).in_("channel_id", missing_ids[start:start + 200]).execute()
-    print(f"Synced {len(rows_by_id)} channels; marked {len(missing_ids)} removed.")
+    for batch in chunks(missing_ids, 200):
+        db.table("channels").update({"status": "removed", "last_sync": now}).in_("channel_id", batch).execute()
+
+    duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+    try:
+        db.table("sync_runs").insert(
+            {
+                "type": "daily-sync",
+                "status": "completed",
+                "duration_ms": duration_ms,
+                "imported_channels": imported,
+                "updated_channels": updated,
+                "removed_channels": len(missing_ids),
+            }
+        ).execute()
+    except Exception as error:  # noqa: BLE001
+        print(f"sync_runs insert failed: {error}")
+
+    summary = {
+        "total": len(rows_by_id),
+        "imported": imported,
+        "updated": updated,
+        "restored": restored,
+        "removed": len(missing_ids),
+        "duration_ms": duration_ms,
+    }
+    print(
+        f"Synced {len(rows_by_id)} channels; imported={imported}, restored={restored}, "
+        f"marked {len(missing_ids)} removed ({duration_ms}ms)."
+    )
+    log_system(db, f"Catalog sync completed: {len(rows_by_id)} active channels", "sync", summary)
 
 
 if __name__ == "__main__":

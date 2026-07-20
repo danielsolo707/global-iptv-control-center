@@ -79,7 +79,10 @@ Open [http://localhost:3000](http://localhost:3000) for the viewer application a
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run the migrations in order: [`001_admin_dashboard.sql`](supabase/migrations/001_admin_dashboard.sql), then [`002_iptv_catalog.sql`](supabase/migrations/002_iptv_catalog.sql). The second migration creates the persistent channel catalog, enables the initial six countries, and adds public online-only catalog access.
+2. Run the migrations in order:
+   - [`001_admin_dashboard.sql`](supabase/migrations/001_admin_dashboard.sql) — admin roles, audit tables, RLS
+   - [`002_iptv_catalog.sql`](supabase/migrations/002_iptv_catalog.sql) — persistent channel catalog, online-only public reads, seed countries (US, GB, DE, FR, IR, TR)
+   - [`003_catalog_hardening.sql`](supabase/migrations/003_catalog_hardening.sql) — UK→GB normalization, atomic stream-check RPC, improved country availability report
 3. Create the first administrator in Supabase Authentication.
 4. Copy that user's UUID and bootstrap the role in the SQL editor:
 
@@ -104,7 +107,16 @@ The service-role key is used only by trusted server-side code and the GitHub Act
 
 The IPTV catalog is synchronized from the upstream `index.m3u` every day. Channel metadata is matched with the upstream public channel list to obtain country, category, and language data. The workers keep channels missing from the upstream source as `removed`, rather than deleting them.
 
-GitHub Actions runs the stream checker every six hours. It records HTTP/Content-Type and FFprobe results in `stream_checks`; one failure results in `checking`, three consecutive failures in `offline`, and ten in `blocked`. A healthy check resets the counter and restores `online`.
+GitHub Actions runs the stream checker every six hours (including previously blocked channels so they can recover). It records HTTP/Content-Type results in `stream_checks`, and optional FFprobe codec validation when `FFPROBE_PATH` is set. Status transitions:
+
+| Consecutive failures | Status |
+| --- | --- |
+| 0 (healthy check) | `online` (counter reset) |
+| 1–2 | `checking` |
+| 3–9 | `offline` |
+| 10+ | `blocked` |
+
+Channels missing from upstream are marked `removed` (never hard-deleted). Channels that reappear are restored to `checking` for re-validation.
 
 Add these repository secrets before enabling the workflows:
 
@@ -138,11 +150,15 @@ On Windows, an absolute path such as `C:\\ffmpeg\\bin\\ffprobe.exe` can be used.
 ## Commands
 
 ```bash
-pnpm dev      # start the development server
-pnpm lint     # run strict TypeScript validation
-pnpm build    # create the optimized production build
-pnpm start    # serve the production build
+pnpm dev            # start the development server
+pnpm lint           # run strict TypeScript validation
+pnpm build          # create the optimized production build
+pnpm start          # serve the production build
+pnpm test           # unit tests (status machine, SSRF, roles, sync rules)
+pnpm test:workers   # Python status-machine tests for GitHub Actions workers
 ```
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the full fix/upgrade report.
 
 ## Project structure
 

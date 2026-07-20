@@ -1,5 +1,5 @@
 export type AdminRole = "admin" | "moderator" | "viewer"
-export type ChannelAdminStatus = "online" | "offline" | "blocked" | "removed" | "disabled"
+export type ChannelAdminStatus = "online" | "offline" | "checking" | "blocked" | "removed" | "disabled"
 
 export type AdminIdentity = {
   id: string
@@ -34,6 +34,7 @@ export type AdminOverview = {
     offline: number
     blocked: number
     removed: number
+    checking?: number
     countries: number
     activeCountries: number
   }
